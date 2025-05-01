@@ -78,16 +78,22 @@ type User struct {
 	Sex                string     `json:"sex" db:"Sex"`
 	DocId              string     `json:"doc_id" db:"DocId"`
 	NationalityId      int        `json:"nationality_id" db:"NationalityId"`
+	NationalityName    string     `json:"nationality_name,omitempty" db:"NationalityName"`
 	Birthdate          *time.Time `json:"birthdate" db:"Birthdate"` // Use pointer for nullable date
 	Picture            string     `json:"picture" db:"Picture"`
 	DegreeId           int64      `json:"degree_id" db:"DegreeId"`
+	DegreeName         string     `json:"degree_name,omitempty" db:"DegreeName"`
 	UniversityId       int64      `json:"university_id" db:"UniversityId"`
+	UniversityName     string     `json:"university_name,omitempty" db:"UniversityName"`
 	RoleId             int        `json:"role_id" db:"RoleId"`
+	RoleName           string     `json:"role_name,omitempty" db:"RoleName"`
 	StatusAuthorizedId int        `json:"status_authorized_id" db:"StatusAuthorizedId"`
 	Summary            string     `json:"summary" db:"Summary"`
 	Address            string     `json:"address" db:"Address"`
 	Github             string     `json:"github" db:"Github"`
 	Linkedin           string     `json:"linkedin" db:"Linkedin"`
+	CreateAt           time.Time  `json:"create_at" db:"CreateAt"`
+	UpdateAt           time.Time  `json:"update_at" db:"UpdateAt"`
 }
 
 // Online defines the structure for the Online table.
@@ -216,13 +222,20 @@ type Event struct {
 
 // Enterprise defines the structure for the Enterprise table.
 type Enterprise struct {
-	Id          int64  `json:"id" db:"Id"`
-	RIF         string `json:"rif" db:"RIF"`
-	CompanyName string `json:"company_name" db:"CompanyName"`
-	CategoryId  int64  `json:"category_id" db:"CategoryId"`
-	Description string `json:"description" db:"Description"`
-	Location    string `json:"location" db:"Location"`
-	Phone       string `json:"phone" db:"Phone"`
+	Id           int64     `json:"id" db:"Id"`
+	RIF          string    `json:"rif" db:"RIF"`
+	CompanyName  string    `json:"companyName" db:"CompanyName"`
+	Password     string    `json:"-" db:"Password"` // Omitir en JSON
+	CategoryId   int64     `json:"categoryId" db:"CategoryId"`
+	CategoryName string    `json:"categoryName,omitempty" db:"CategoryName"`
+	Description  string    `json:"description" db:"Description"`
+	Location     string    `json:"location" db:"Location"`
+	WebSite      string    `json:"website" db:"WebSite"`
+	Email        string    `json:"email" db:"Email"`
+	Phone        string    `json:"phone" db:"Phone"`
+	Picture      string    `json:"picture" db:"Picture"`
+	CreateAt     time.Time `json:"createAt" db:"CreateAt"`
+	UpdateAt     time.Time `json:"updateAt" db:"UpdateAt"`
 }
 
 // --- Helper Structs ---

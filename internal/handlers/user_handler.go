@@ -24,16 +24,20 @@ func NewUserHandler(db *sql.DB) *UserHandler {
 
 // GetMyProfile obtiene el perfil del usuario autenticado actualmente
 func (h *UserHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
-	// TODO: Este endpoint debe estar protegido por el middleware de autenticación.
-	// El middleware debería añadir los claims del usuario (incluyendo UserID) al contexto de la petición.
-
-	// Ejemplo de cómo obtener UserID del contexto (asumiendo que el middleware lo añade)
-	claims, ok := r.Context().Value(auth.ContextKeyClaims).(*auth.Claims)
-	if !ok || claims == nil {
-		http.Error(w, "Unauthorized: Missing claims", http.StatusUnauthorized)
+	// Obtener el ID del usuario del contexto (establecido por el middleware)
+	userIDCtx := r.Context().Value(auth.UserIDKey) // Usar la clave correcta
+	if userIDCtx == nil {
+		log.Println("GetMyProfile Error: User ID not found in context")
+		http.Error(w, "User not authenticated properly", http.StatusUnauthorized)
 		return
 	}
-	userID := claims.UserID
+	// Hacer type assertion a int64
+	userID, ok := userIDCtx.(int64)
+	if !ok {
+		log.Println("GetMyProfile Error: Invalid User ID type in context")
+		http.Error(w, "Invalid user information", http.StatusInternalServerError)
+		return
+	}
 
 	var user models.User
 	// Recuperar usuario de la BD usando el userID del token

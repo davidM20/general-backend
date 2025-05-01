@@ -21,26 +21,35 @@ type Config struct {
 
 // LoadConfig loads configuration from environment variables or a config file.
 func LoadConfig() (*Config, error) {
-	viper.SetConfigName(".env")   // Nombre del archivo de configuración (sin extensión)
-	viper.SetConfigType("env")    // Tipo del archivo de configuración
-	viper.AddConfigPath(".")      // Ruta para buscar el archivo de configuración (directorio actual)
-	viper.AddConfigPath("../")    // También buscar en el directorio padre (útil si se ejecuta desde cmd/*)
-	viper.AddConfigPath("../../") // Y dos niveles arriba
+	viper.SetConfigName(".env") // Nombre del archivo de configuración (sin extensión)
+	viper.SetConfigType("env")  // Tipo del archivo de configuración
 
-	viper.AutomaticEnv() // Leer también variables de entorno
+	// Rutas de búsqueda: directorio actual (para tests?), y directorios cmd/*
+	viper.AddConfigPath(".")       // Directorio actual (e.g. /internal/config)
+	viper.AddConfigPath("cmd/api") // Para ejecución desde la raíz del proyecto
+	viper.AddConfigPath("cmd/websocket")
+	// Buscar también relativa a donde se ejecuta el binario
+	// (Importante cuando se construye y ejecuta desde /cmd/api/ o /cmd/websocket/)
+	viper.AddConfigPath(".") // Directorio de ejecución del binario
 
-	// Establecer valores por defecto	viper.SetDefault("API_PORT", "8080")
+	// Añadir configuración para buscar automáticamente variables de entorno
+	viper.AutomaticEnv()
+
+	// Establecer valores por defecto (opcional, pero recomendado)
+	viper.SetDefault("API_PORT", "8080")
 	viper.SetDefault("WS_PORT", "8081")
 	viper.SetDefault("PROXY_PORT", "8000")
+	viper.SetDefault("DB_HOST", "127.0.0.1")
+	viper.SetDefault("DB_PORT", "3306")
 	viper.SetDefault("JWT_SECRET", "un-secreto-muy-seguro-cambiar-en-produccion") // ¡CAMBIAR ESTO!
 
-	// Intentar leer el archivo de configuración (opcional)
+	// Intentar leer el archivo de configuración
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Archivo de configuración no encontrado; ignorar y usar env vars/defaults
-			fmt.Println("Config file (.env) not found. Using environment variables and defaults.")
+			// Archivo .env no encontrado, no es un error fatal si las variables de entorno están seteadas
+			fmt.Println("Warning: .env file not found. Relying on environment variables and defaults.")
 		} else {
-			// Otro error al leer el archivo de configuración
+			// Otro error al leer el archivo
 			return nil, fmt.Errorf("error reading config file: %w", err)
 		}
 	}
@@ -58,21 +67,32 @@ func LoadConfig() (*Config, error) {
 		dbHost := viper.GetString("DB_HOST")
 		dbPort := viper.GetString("DB_PORT")
 		dbName := viper.GetString("DB_NAME")
-		if dbUser != "" && dbPassword != "" && dbHost != "" && dbPort != "" && dbName != "" {
-			cfg.DatabaseDSN = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
-				dbUser, dbPassword, dbHost, dbPort, dbName)
-		} else {
-			return nil, fmt.Errorf("database DSN (DB_DSN or individual DB_ vars) is required")
+
+		if dbUser == "" || dbName == "" {
+			return nil, fmt.Errorf("DB_USER and DB_NAME are required if DB_DSN is not set")
 		}
+		if dbHost == "" {
+			dbHost = "127.0.0.1" // Default host if not set but others are
+		}
+		if dbPort == "" {
+			dbPort = "3306" // Default port if not set but others are
+		}
+
+		cfg.DatabaseDSN = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+			dbUser, dbPassword, dbHost, dbPort, dbName)
+
+	} else {
+		// Si se proporciona DB_DSN, usarlo directamente
+		fmt.Println("Using provided DB_DSN")
+	}
+
+	if cfg.JwtSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET is required")
 	}
 
 	if cfg.GCSBucketName == "" {
-		fmt.Println("Warning: GCS_BUCKET_NAME is not set. File uploads will fail.")
+		fmt.Println("Warning: GCS_BUCKET_NAME is not set. File uploads will fail if GCS is intended.")
 	}
-	// La clave de cuenta de servicio es opcional si se usa ADC (Application Default Credentials)
-	// if cfg.GCSServiceAccountKey == "" {
-	//     fmt.Println("Warning: GCS_SERVICE_ACCOUNT_KEY_PATH is not set. Assuming Application Default Credentials.")
-	// }
 
 	return &cfg, nil
 }

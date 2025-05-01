@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/auth"   // Para JWT y hash de contraseña
 	"github.com/davidM20/micro-service-backend-go.git/internal/config" // Importar config
@@ -222,12 +223,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generar token JWT usando el secreto de la configuración
-	jwtSecret := []byte(h.Cfg.JwtSecret) // Usar el secreto de la config
-	tokenString, err := auth.GenerateJWT(user.Id, user.RoleId, jwtSecret)
+	// Generar JWT
+	expirationTime := 24 * time.Hour // Expiración de 24 horas (configurable?)
+	tokenString, err := auth.GenerateJWT(user.Id, int64(user.RoleId), []byte(h.Cfg.JwtSecret), expirationTime)
 	if err != nil {
-		log.Printf("Error generating JWT: %v", err)
-		http.Error(w, "Login failed", http.StatusInternalServerError)
+		log.Printf("Login Error: Failed generating JWT for UserID %d: %v", user.Id, err)
+		http.Error(w, "Error generating session token", http.StatusInternalServerError)
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -168,6 +169,8 @@ func createTables(tx *sql.Tx) error {
         Address VARCHAR(255),
         Github VARCHAR(255),
         Linkedin VARCHAR(255),
+        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UpdateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (NationalityId) REFERENCES Nationality(Id),
         FOREIGN KEY (DegreeId) REFERENCES Degree(Id),
         FOREIGN KEY (UniversityId) REFERENCES University(Id),
@@ -322,10 +325,22 @@ func createTables(tx *sql.Tx) error {
     );
 	`
 
-	_, err := tx.Exec(sqlSchema)
-	if err != nil {
-		return fmt.Errorf("error executing schema creation: %w", err)
+	// Dividir el esquema en sentencias individuales
+	statements := strings.Split(sqlSchema, ";")
+
+	for _, stmt := range statements {
+		trimmedStmt := strings.TrimSpace(stmt)
+		if trimmedStmt == "" {
+			continue // Saltar sentencias vacías resultantes del split
+		}
+		_, err := tx.Exec(trimmedStmt) // Ejecutar cada sentencia
+		if err != nil {
+			// Loguear la sentencia específica que falló para facilitar la depuración
+			log.Printf("Error executing statement: %s", trimmedStmt)
+			return fmt.Errorf("error executing schema creation statement: %w", err)
+		}
 	}
+
 	log.Println("Tables created or already exist.")
 	return nil
 }

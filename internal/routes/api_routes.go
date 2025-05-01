@@ -18,7 +18,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	userHandler := handlers.NewUserHandler(db)
 	enterpriseHandler := handlers.NewEnterpriseHandler(db)
 	miscHandler := handlers.NewMiscHandler(db)
-	mediaHandler := handlers.NewMediaHandler(db)
+	mediaHandler := handlers.NewMediaHandler(db, cfg)
 
 	// Crear subrouter para la API, quizás con prefijo /api/v1
 	api := r.PathPrefix("/api/v1").Subrouter()

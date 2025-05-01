@@ -31,10 +31,10 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			// 3. Añadir los claims al contexto de la petición
-			ctx := context.WithValue(r.Context(), auth.ContextKeyClaims, claims)
+			// Añadir información del usuario (solo el ID) al contexto de la petición
+			ctx := context.WithValue(r.Context(), auth.UserIDKey, claims.UserID)
 
-			// 4. Llamar al siguiente handler en la cadena con el nuevo contexto
+			// Llamar al siguiente handler con el contexto modificado
 			log.Printf("AuthMiddleware: User %d authenticated via token param with Role %d", claims.UserID, claims.RoleID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
