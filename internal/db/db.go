@@ -307,7 +307,6 @@ func createTables(tx *sql.Tx) error {
         OtherUserId BIGINT, -- User causing the event
         ProyectId BIGINT,
         CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Changed DATE to TIMESTAMP
-        IsRead TINYINT(1) DEFAULT 0, -- Added IsRead field
         FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE,
         FOREIGN KEY (OtherUserId) REFERENCES User(Id) ON DELETE SET NULL, -- Keep event if other user deleted
         FOREIGN KEY (ProyectId) REFERENCES Project(Id) ON DELETE SET NULL -- Keep event if project deleted

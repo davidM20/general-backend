@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // Token defines the structure for the Token table.
 type Token struct {
@@ -66,34 +69,34 @@ type Role struct {
 	Name string `json:"name" db:"Name"`
 }
 
-// User defines the structure for the User table.
+// User defines the structure for the User table, handling potential NULL values.
 type User struct {
-	Id                 int64      `json:"id" db:"Id"`
-	FirstName          string     `json:"first_name" db:"FirstName"`
-	LastName           string     `json:"last_name" db:"LastName"`
-	UserName           string     `json:"user_name" db:"UserName"`
-	Password           string     `json:"-" db:"Password"` // Exclude password from JSON responses
-	Email              string     `json:"email" db:"Email"`
-	Phone              string     `json:"phone" db:"Phone"`
-	Sex                string     `json:"sex" db:"Sex"`
-	DocId              string     `json:"doc_id" db:"DocId"`
-	NationalityId      int        `json:"nationality_id" db:"NationalityId"`
-	NationalityName    string     `json:"nationality_name,omitempty" db:"NationalityName"`
-	Birthdate          *time.Time `json:"birthdate" db:"Birthdate"` // Use pointer for nullable date
-	Picture            string     `json:"picture" db:"Picture"`
-	DegreeId           int64      `json:"degree_id" db:"DegreeId"`
-	DegreeName         string     `json:"degree_name,omitempty" db:"DegreeName"`
-	UniversityId       int64      `json:"university_id" db:"UniversityId"`
-	UniversityName     string     `json:"university_name,omitempty" db:"UniversityName"`
-	RoleId             int        `json:"role_id" db:"RoleId"`
-	RoleName           string     `json:"role_name,omitempty" db:"RoleName"`
-	StatusAuthorizedId int        `json:"status_authorized_id" db:"StatusAuthorizedId"`
-	Summary            string     `json:"summary" db:"Summary"`
-	Address            string     `json:"address" db:"Address"`
-	Github             string     `json:"github" db:"Github"`
-	Linkedin           string     `json:"linkedin" db:"Linkedin"`
-	CreateAt           time.Time  `json:"create_at" db:"CreateAt"`
-	UpdateAt           time.Time  `json:"update_at" db:"UpdateAt"`
+	Id                 int64          `json:"id" db:"Id"`
+	FirstName          string         `json:"first_name" db:"FirstName"`
+	LastName           string         `json:"last_name" db:"LastName"`
+	UserName           string         `json:"user_name" db:"UserName"`
+	Password           string         `json:"-" db:"Password"` // Exclude password from JSON responses
+	Email              string         `json:"email" db:"Email"`
+	Phone              sql.NullString `json:"phone" db:"Phone"`                  // Handle NULL
+	Sex                sql.NullString `json:"sex" db:"Sex"`                      // Handle NULL (Asumiendo que puede ser NULL)
+	DocId              sql.NullString `json:"doc_id" db:"DocId"`                 // Handle NULL
+	NationalityId      sql.NullInt32  `json:"nationality_id" db:"NationalityId"` // Handle NULL (int es int32)
+	NationalityName    string         `json:"nationality_name,omitempty" db:"NationalityName"`
+	Birthdate          sql.NullTime   `json:"birthdate" db:"Birthdate"` // Handle NULL
+	Picture            sql.NullString `json:"picture" db:"Picture"`     // Handle NULL
+	DegreeId           sql.NullInt64  `json:"degree_id" db:"DegreeId"`  // Handle NULL
+	DegreeName         string         `json:"degree_name,omitempty" db:"DegreeName"`
+	UniversityId       sql.NullInt64  `json:"university_id" db:"UniversityId"` // Handle NULL
+	UniversityName     string         `json:"university_name,omitempty" db:"UniversityName"`
+	RoleId             int            `json:"role_id" db:"RoleId"` // Asumiendo no NULL
+	RoleName           string         `json:"role_name,omitempty" db:"RoleName"`
+	StatusAuthorizedId int            `json:"status_authorized_id" db:"StatusAuthorizedId"` // Asumiendo no NULL
+	Summary            sql.NullString `json:"summary" db:"Summary"`                         // Handle NULL
+	Address            sql.NullString `json:"address" db:"Address"`                         // Handle NULL
+	Github             sql.NullString `json:"github" db:"Github"`                           // Handle NULL
+	Linkedin           sql.NullString `json:"linkedin" db:"Linkedin"`                       // Handle NULL
+	// CreateAt           time.Time       `json:"create_at" db:"CreateAt"` // Columna no existe en DB según usuario
+	// UpdateAt           time.Time       `json:"update_at" db:"UpdateAt"` // Columna no existe en DB según usuario
 }
 
 // Online defines the structure for the Online table.
@@ -149,34 +152,34 @@ type Message struct {
 
 // Education defines the structure for the Education table.
 type Education struct {
-	Id             int64      `json:"id" db:"Id"`
-	PersonId       int64      `json:"person_id" db:"PersonId"`
-	Institution    string     `json:"institution" db:"Institution"`
-	Degree         string     `json:"degree" db:"Degree"`
-	Campus         string     `json:"campus" db:"Campus"`
-	GraduationDate *time.Time `json:"graduation_date" db:"GraduationDate"`
-	CountryId      int64      `json:"country_id" db:"CountryId"` // Should reference Nationality? Schema ambiguous
+	Id             int64        `json:"id" db:"Id"`
+	PersonId       int64        `json:"person_id" db:"PersonId"`
+	Institution    string       `json:"institution" db:"Institution"`
+	Degree         string       `json:"degree" db:"Degree"`
+	Campus         string       `json:"campus" db:"Campus"`
+	GraduationDate sql.NullTime `json:"graduation_date" db:"GraduationDate"` // Handle NULL
+	CountryId      int64        `json:"country_id" db:"CountryId"`
 }
 
 // WorkExperience defines the structure for the WorkExperience table.
 type WorkExperience struct {
-	Id          int64      `json:"id" db:"Id"`
-	PersonId    int64      `json:"person_id" db:"PersonId"`
-	Company     string     `json:"company" db:"Company"`
-	Position    string     `json:"position" db:"Position"`
-	StartDate   *time.Time `json:"start_date" db:"StartDate"`
-	EndDate     *time.Time `json:"end_date" db:"EndDate"` // Nullable if currently employed
-	Description string     `json:"description" db:"Description"`
-	CountryId   int64      `json:"country_id" db:"CountryId"` // Should reference Nationality? Schema ambiguous
+	Id          int64        `json:"id" db:"Id"`
+	PersonId    int64        `json:"person_id" db:"PersonId"`
+	Company     string       `json:"company" db:"Company"`
+	Position    string       `json:"position" db:"Position"`
+	StartDate   sql.NullTime `json:"start_date" db:"StartDate"` // Handle NULL
+	EndDate     sql.NullTime `json:"end_date" db:"EndDate"`     // Handle NULL
+	Description string       `json:"description" db:"Description"`
+	CountryId   int64        `json:"country_id" db:"CountryId"`
 }
 
 // Certifications defines the structure for the Certifications table.
 type Certifications struct {
-	Id            int64      `json:"id" db:"Id"`
-	PersonId      int64      `json:"person_id" db:"PersonId"`
-	Certification string     `json:"certification" db:"Certification"`
-	Institution   string     `json:"institution" db:"Institution"`
-	DateObtained  *time.Time `json:"date_obtained" db:"DateObtained"`
+	Id            int64        `json:"id" db:"Id"`
+	PersonId      int64        `json:"person_id" db:"PersonId"`
+	Certification string       `json:"certification" db:"Certification"`
+	Institution   string       `json:"institution" db:"Institution"`
+	DateObtained  sql.NullTime `json:"date_obtained" db:"DateObtained"` // Handle NULL
 }
 
 // Skills defines the structure for the Skills table.
@@ -197,45 +200,45 @@ type Languages struct {
 
 // Project defines the structure for the Project table.
 type Project struct {
-	Id              int64      `json:"id" db:"Id"`
-	PersonID        int64      `json:"person_id" db:"PersonID"`
-	Title           string     `json:"title" db:"Title"`
-	Role            string     `json:"role" db:"Role"`
-	Description     string     `json:"description" db:"Description"`
-	Company         string     `json:"company" db:"Company"`
-	Document        string     `json:"document" db:"Document"` // Link to document or identifier?
-	ProjectStatus   string     `json:"project_status" db:"ProjectStatus"`
-	StartDate       *time.Time `json:"start_date" db:"StartDate"`
-	ExpectedEndDate *time.Time `json:"expected_end_date" db:"ExpectedEndDate"`
+	Id              int64        `json:"id" db:"Id"`
+	PersonID        int64        `json:"person_id" db:"PersonID"`
+	Title           string       `json:"title" db:"Title"`
+	Role            string       `json:"role" db:"Role"`
+	Description     string       `json:"description" db:"Description"`
+	Company         string       `json:"company" db:"Company"`
+	Document        string       `json:"document" db:"Document"`
+	ProjectStatus   string       `json:"project_status" db:"ProjectStatus"`
+	StartDate       sql.NullTime `json:"start_date" db:"StartDate"`              // Handle NULL
+	ExpectedEndDate sql.NullTime `json:"expected_end_date" db:"ExpectedEndDate"` // Handle NULL
 }
 
 // Event defines the structure for the Event (notifications) table.
 type Event struct {
-	Id          int64     `json:"id" db:"Id"`
-	Description string    `json:"description" db:"Description"`
-	UserId      int64     `json:"user_id" db:"UserId"`            // User receiving the notification
-	OtherUserId int64     `json:"other_user_id" db:"OtherUserId"` // User causing the event (optional)
-	ProyectId   int64     `json:"project_id" db:"ProyectId"`      // Related project (optional)
-	CreateAt    time.Time `json:"create_at" db:"CreateAt"`
-	IsRead      bool      `json:"is_read" db:"IsRead"` // Added field to track read status
+	Id          int64         `json:"id" db:"Id"`
+	Description string        `json:"description" db:"Description"`
+	UserId      int64         `json:"user_id" db:"UserId"`
+	OtherUserId sql.NullInt64 `json:"other_user_id" db:"OtherUserId"` // Handle NULL
+	ProyectId   sql.NullInt64 `json:"project_id" db:"ProyectId"`      // Handle NULL
+	CreateAt    time.Time     `json:"create_at" db:"CreateAt"`
+	IsRead      bool          `json:"is_read" db:"IsRead"`
 }
 
 // Enterprise defines the structure for the Enterprise table.
 type Enterprise struct {
-	Id           int64     `json:"id" db:"Id"`
-	RIF          string    `json:"rif" db:"RIF"`
-	CompanyName  string    `json:"companyName" db:"CompanyName"`
-	Password     string    `json:"-" db:"Password"` // Omitir en JSON
-	CategoryId   int64     `json:"categoryId" db:"CategoryId"`
-	CategoryName string    `json:"categoryName,omitempty" db:"CategoryName"`
-	Description  string    `json:"description" db:"Description"`
-	Location     string    `json:"location" db:"Location"`
-	WebSite      string    `json:"website" db:"WebSite"`
-	Email        string    `json:"email" db:"Email"`
-	Phone        string    `json:"phone" db:"Phone"`
-	Picture      string    `json:"picture" db:"Picture"`
-	CreateAt     time.Time `json:"createAt" db:"CreateAt"`
-	UpdateAt     time.Time `json:"updateAt" db:"UpdateAt"`
+	Id           int64          `json:"id" db:"Id"`
+	RIF          string         `json:"rif" db:"RIF"`
+	CompanyName  string         `json:"companyName" db:"CompanyName"`
+	Password     string         `json:"-" db:"Password"`
+	CategoryId   sql.NullInt64  `json:"categoryId" db:"CategoryId"` // Handle NULL
+	CategoryName string         `json:"categoryName,omitempty" db:"CategoryName"`
+	Description  sql.NullString `json:"description" db:"Description"` // Handle NULL
+	Location     sql.NullString `json:"location" db:"Location"`       // Handle NULL
+	WebSite      sql.NullString `json:"website" db:"WebSite"`         // Handle NULL (asumiendo que puede ser NULL)
+	Email        sql.NullString `json:"email" db:"Email"`             // Handle NULL (asumiendo que puede ser NULL)
+	Phone        sql.NullString `json:"phone" db:"Phone"`             // Handle NULL
+	Picture      sql.NullString `json:"picture" db:"Picture"`         // Handle NULL
+	CreateAt     time.Time      `json:"createAt" db:"CreateAt"`
+	UpdateAt     time.Time      `json:"updateAt" db:"UpdateAt"`
 }
 
 // --- Helper Structs ---
@@ -271,7 +274,7 @@ type LoginRequest struct {
 // LoginResponse defines the structure for login responses.
 type LoginResponse struct {
 	Token string `json:"token"`
-	User  User   `json:"user"` // Send back user info (excluding password)
+	User  User   `json:"user"`
 }
 
 // WebSocketMessage defines the generic structure for incoming WebSocket messages.
