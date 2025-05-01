@@ -1,0 +1,36 @@
+# Environment variables
+.env
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below if you do not commit vendors)
+# vendor/
+
+# Go workspace files
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Compiled binary
+backend-general # O el nombre que le des al compilar
+api
+websocket
+proxy
+
+# Log files
+*.log
+
+# Google Cloud credentials file
+*-credentials.json
+*.json # Sé específico si es posible para evitar ignorar otros JSON útiles 
