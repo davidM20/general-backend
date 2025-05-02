@@ -478,3 +478,71 @@ func insertDefaultData(tx *sql.Tx) error {
 	log.Println("Finished inserting default data.")
 	return nil
 }
+
+// GetAllCategories retrieves all categories from the database, ordered by name.
+func GetAllCategories() ([]models.Category, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+	rows, err := db.Query("SELECT CategoryId, Name FROM Category ORDER BY Name ASC")
+	if err != nil {
+		log.Printf("Error querying categories: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var categories []models.Category
+	for rows.Next() {
+		var category models.Category
+		if err := rows.Scan(&category.CategoryId, &category.Name); err != nil {
+			log.Printf("Error scanning category row: %v", err)
+			continue // Skip problematic rows
+		}
+		categories = append(categories, category)
+	}
+	if err = rows.Err(); err != nil {
+		log.Printf("Error iterating category rows: %v", err)
+		return nil, err
+	}
+	return categories, nil
+}
+
+// CheckCategoryExistsByName checks if a category with the given name already exists.
+func CheckCategoryExistsByName(name string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database not initialized")
+	}
+	var exists bool
+	query := "SELECT EXISTS(SELECT 1 FROM Category WHERE Name = ?)"
+	err := db.QueryRow(query, name).Scan(&exists)
+	if err != nil {
+		log.Printf("Error checking category existence by name %s: %v", name, err)
+		return false, err
+	}
+	return exists, nil
+}
+
+// AddCategory inserts a new category into the database.
+// It assumes the name does not already exist (should be checked beforehand).
+func AddCategory(name string) (models.Category, error) {
+	if db == nil {
+		return models.Category{}, fmt.Errorf("database not initialized")
+	}
+	query := "INSERT INTO Category (Name) VALUES (?)"
+	result, err := db.Exec(query, name)
+	if err != nil {
+		log.Printf("Error inserting category %s: %v", name, err)
+		// Consider checking for specific duplicate entry errors if needed
+		return models.Category{}, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		log.Printf("Error getting last insert ID for category %s: %v", name, err)
+		// The insert succeeded, but we can't get the ID easily.
+		// Return a category with name only, or handle differently.
+		return models.Category{Name: name}, err
+	}
+
+	return models.Category{CategoryId: id, Name: name}, nil
+}

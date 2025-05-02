@@ -21,6 +21,7 @@ import TestUploadMedia from './pages/TestUploadMedia';
 import TestListRequests from './pages/TestListRequests';
 import TestNotifications from './pages/TestNotifications';
 import TestMyProfileWS from './pages/TestMyProfileWS';
+import ManageCategoriesPage from './pages/ManageCategoriesPage'; // Importar nueva página
 // Placeholder para otras páginas
 const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => <div><h2>{title}</h2><p>Página en construcción...</p></div>;
 
@@ -76,15 +77,15 @@ function App() {
             {/* Ruta ws-myprofile que apunta al mismo test que test-my-profile-ws */}
             <Route path="ws-myprofile" element={<TestMyProfileWS />} />
 
-            {/* Ruta de Búsqueda Protegida */}
-            {/* Se envuelve el elemento en ProtectedRoute */}
-            <Route 
-              path="search" 
-              element={ 
-                <ProtectedRoute>
-                  <SearchPage />
-                </ProtectedRoute>
-              } 
+            {/* Rutas Protegidas */}
+            {/* Envueltas individualmente en ProtectedRoute o un Outlet protegido */}
+            <Route
+              path="search"
+              element={ <ProtectedRoute><SearchPage /></ProtectedRoute> }
+            />
+            <Route
+              path="manage-categories" // Nueva ruta protegida
+              element={ <ProtectedRoute><ManageCategoriesPage /></ProtectedRoute> }
             />
 
             {/* Placeholder para otras rutas mencionadas pero sin componente */}

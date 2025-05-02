@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Category } from '../types/api'; // Importar el nuevo tipo
 
 // Asume que el proxy inverso está corriendo en localhost:8080
 const API_BASE_URL = 'http://localhost:8080/api/v1';
@@ -6,6 +7,26 @@ const API_BASE_URL = 'http://localhost:8080/api/v1';
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   // No incluimos el token aquí directamente, se añadirá por petición si es necesario
+});
+
+// Interceptor para añadir el token JWT a las solicitudes protegidas
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('authToken'); // O donde almacenes el token
+  if (token && config.url !== '/login' && !config.url?.startsWith('/register')) { // No añadir token a login/registro
+    // Asumiendo que el token se pasa vía URL para las rutas protegidas como hicimos con WS
+    // Si la API espera el token en Header (más común):
+    // config.headers.Authorization = `Bearer ${token}`;
+    // Si es por URL para POST /categories:
+     if (config.method === 'post' && config.url === '/categories') {
+         config.url += `?token=${encodeURIComponent(token)}`;
+     }
+     // Si es por URL para otras rutas protegidas (ej GET /users/me):
+     // else if (config.method === 'get' && config.url === '/users/me') { ... }
+     // Es importante ser consistente con cómo el middleware espera el token
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
 });
 
 // Función de ejemplo para obtener nacionalidades (ruta pública)
@@ -183,6 +204,29 @@ export const uploadMedia = async (file: File, token: string) => {
         const errorMessage = error.response?.data?.error || error.message || 'Unknown error uploading media';
         throw new Error(errorMessage);
     }
+};
+
+// --- Funciones para Categorías ---
+
+export const getCategories = async (): Promise<Category[]> => {
+  try {
+    const response = await apiClient.get<Category[]>('/categories');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    throw error; // Re-lanzar para manejo en el componente
+  }
+};
+
+export const addCategory = async (name: string): Promise<Category> => {
+   // El token se añade automáticamente por el interceptor (vía URL en este caso)
+   try {
+        const response = await apiClient.post<Category>('/categories', { name }); // Ruta relativa a baseURL
+        return response.data;
+   } catch (error) {
+       console.error('Error adding category:', error);
+       throw error;
+   }
 };
 
 // Aquí puedes añadir más funciones para otras rutas de la API

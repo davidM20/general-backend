@@ -19,11 +19,14 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	enterpriseHandler := handlers.NewEnterpriseHandler(db)
 	miscHandler := handlers.NewMiscHandler(db)
 	mediaHandler := handlers.NewMediaHandler(db, cfg)
+	categoryHandler := handlers.NewCategoryHandler()
 
 	// Crear subrouter para la API, quizás con prefijo /api/v1
 	api := r.PathPrefix("/api/v1").Subrouter()
 
 	// --- Rutas Públicas (sin autenticación) ---
+	api.HandleFunc("/categories", categoryHandler.ListCategories).Methods(http.MethodGet)
+
 	api.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("API is healthy"))
@@ -46,7 +49,8 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	api.HandleFunc("/nationalities", miscHandler.GetNationalities).Methods(http.MethodGet)
 	api.HandleFunc("/universities", miscHandler.GetUniversities).Methods(http.MethodGet)
 	api.HandleFunc("/degrees/{universityID:[0-9]+}", miscHandler.GetDegreesByUniversity).Methods(http.MethodGet)
-	api.HandleFunc("/categories", miscHandler.GetCategories).Methods(http.MethodGet)
+	// api.HandleFunc("/languages", miscHandler.GetLanguages).Methods(http.MethodGet) // Comentado - No existe?
+	// api.HandleFunc("/skills", miscHandler.GetSkills).Methods(http.MethodGet) // Comentado - Causa error
 
 	// --- Rutas Protegidas (requieren autenticación JWT) ---
 	protected := api.PathPrefix("/").Subrouter() // Subrouter para aplicar middleware
@@ -54,6 +58,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	protected.Use(middleware.AuthMiddleware(cfg)) // Pasar la configuración
 
 	// Todas las rutas definidas en 'protected' ahora requerirán un token JWT válido
+	protected.HandleFunc("/categories", categoryHandler.AddCategory).Methods(http.MethodPost)
 	protected.HandleFunc("/users/me", userHandler.GetMyProfile).Methods(http.MethodGet) // Ver mi propio perfil
 	// protected.HandleFunc("/users/{userID:[0-9]+}", userHandler.GetUserProfile).Methods(http.MethodGet) // Ver perfil de otro (si permitido)
 	// PUT /users/me para actualizar perfil (parcialmente, o todo?) - Podría ser WS

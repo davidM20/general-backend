@@ -35,34 +35,54 @@ const Sidebar: React.FC = () => {
         // ... añadir más acciones WS
     ];
 
+    // TODO: Podríamos separar las rutas de prueba de las rutas "reales" protegidas
+    const testRoutes = [
+         // ... (lista actual de apiEndpoints y wsActions puede ir aquí o mantenerse separada)
+         { path: '/ws/connect', name: 'Connect (WS Test)' },
+         { path: '/ws/chat', name: 'Send Chat (WS Test)' },
+         { path: '/ws/lists', name: 'List Requests (WS Test)' },
+         { path: '/ws/notifications', name: 'Notifications (WS Test)' },
+         { path: '/test-my-profile-ws', name: 'Get My Profile (WS Test)' },
+         { path: '/profile', name: 'My Profile (API Test)' },
+         { path: '/nationalities', name: 'Nationalities (API Test)' },
+         { path: '/enterprise', name: 'Register Enterprise (API Test)' },
+         { path: '/upload', name: 'Upload Media (API Test)' },
+    ];
+
+     const protectedRoutes = [ // Rutas que requieren login
+         { path: '/search', name: 'Search (WS)' },
+         { path: '/manage-categories', name: 'Manage Categories' }, // Nuevo enlace
+         // Añadir más rutas protegidas aquí
+     ];
+
     return (
         <div className="sidebar">
-            <h3>API Endpoints</h3>
+            <h3>Testing Area</h3>
             <nav>
                 <ul>
-                    {apiEndpoints.map((endpoint) => (
-                        <li key={endpoint.path}>
+                    {testRoutes.map((route) => (
+                        <li key={route.path}>
                             <NavLink
-                                to={endpoint.path}
+                                to={route.path}
                                 className={({ isActive }) => isActive ? "active-link" : ""}
                             >
-                                {endpoint.name}
+                                {route.name}
                             </NavLink>
                         </li>
                     ))}
                 </ul>
             </nav>
 
-            <h3>WebSocket Actions</h3>
+            <h3>App Features</h3>
             <nav>
                 <ul>
-                    {wsActions.map((action) => (
-                        <li key={action.path}>
+                    {protectedRoutes.map((route) => (
+                        <li key={route.path}>
                             <NavLink
-                                to={action.path}
+                                to={route.path}
                                 className={({ isActive }) => isActive ? "active-link" : ""}
                             >
-                                {action.name}
+                                {route.name}
                             </NavLink>
                         </li>
                     ))}
