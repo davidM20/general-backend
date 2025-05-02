@@ -30,6 +30,8 @@ const Sidebar: React.FC = () => {
         { path: '/ws/lists', name: 'List Requests (WS)' },
         { path: '/ws/notifications', name: 'Notifications (WS)' },
         { path: '/test-my-profile-ws', name: 'Get My Profile (WS)' },
+        { path: '/ws-myprofile', name: 'My Profile (WS)' },
+        { path: '/search', name: 'Search (WS)' },
         // ... añadir más acciones WS
     ];
 
