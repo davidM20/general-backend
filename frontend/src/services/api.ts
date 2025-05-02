@@ -84,6 +84,44 @@ export const registerUserStep1 = async (userData: {
     }
 };
 
+// Función para el segundo paso del registro
+export const registerUserStep2 = async (userId: number, userData: {
+    docId: string;
+    nationalityId: number;
+}) => {
+    if (!userId || !userData.docId || !userData.nationalityId) {
+        throw new Error('UserID, DocId, and NationalityId are required for registration step 2.');
+    }
+    try {
+        // Endpoint: /auth/register/step2/{userId}
+        const response = await apiClient.post(`/auth/register/step2/${userId}`, userData);
+        return response.data; // Puede devolver un simple success o nada
+    } catch (error: any) {
+        console.error('Error during registration step 2:', error);
+        const errorMessage = error.response?.data?.error || error.message || 'Unknown registration step 2 error';
+        throw new Error(errorMessage);
+    }
+};
+
+// Función para el tercer paso del registro
+export const registerUserStep3 = async (userId: number, userData: {
+    sex: string;
+    birthdate: string; // Enviar como string YYYY-MM-DD
+}) => {
+    if (!userId || !userData.sex || !userData.birthdate) {
+        throw new Error('UserID, Sex, and Birthdate are required for registration step 3.');
+    }
+    try {
+        // Endpoint: /auth/register/step3/{userId}
+        const response = await apiClient.post(`/auth/register/step3/${userId}`, userData);
+        return response.data; // Puede devolver el usuario completo o un success
+    } catch (error: any) {
+        console.error('Error during registration step 3:', error);
+        const errorMessage = error.response?.data?.error || error.message || 'Unknown registration step 3 error';
+        throw new Error(errorMessage);
+    }
+};
+
 // Función para registrar una empresa
 export const registerEnterprise = async (enterpriseData: {
     rif: string;
