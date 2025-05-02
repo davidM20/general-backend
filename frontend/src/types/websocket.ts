@@ -166,4 +166,82 @@ export interface MyProfileResponse {
   github?: string;
   linkedin?: string;
   curriculum: CurriculumResponse; // Usar el tipo de currículum
+}
+
+// --- Tipos para Listas --- 
+
+// Payload para solicitar una lista (ya debería existir)
+// export interface ListRequestPayload { listType: string; ... }
+
+// Tipos de Info para las listas
+export interface ContactInfo {
+  userId: number;
+  userName: string;
+  firstName?: string;
+  lastName?: string;
+  picture?: string;
+  isOnline: boolean;
+  chatId: string;
+}
+
+export interface ChatInfo {
+  chatId: string;
+  otherUserId: number;
+  otherUserName: string;
+  otherFirstName?: string;
+  otherLastName?: string;
+  otherPicture?: string;
+  lastMessage?: string;
+  lastMessageTs?: number; // timestamp ms
+  unreadCount?: number;
+  isOnline: boolean; // isOtherOnline en Go, renombrado por consistencia?
+}
+
+export interface OnlineUserInfo {
+  userId: number;
+  userName: string;
+}
+
+// Tipos de respuesta para las listas (añadir si faltan)
+export const MessageTypeListContactsResponse = "list_contacts_response";
+export const MessageTypeListChatsResponse = "list_chats_response";
+export const MessageTypeListOnlineUsersResponse = "list_online_users_response";
+
+// Payload genérico para respuestas de listas (ya debería existir)
+// export interface ListResponsePayload { listType: string; data: any; }
+
+// Payloads específicos para las respuestas de lista
+export interface ListContactsResponsePayload {
+    data: ContactInfo[];
+}
+export interface ListChatsResponsePayload {
+    data: ChatInfo[];
+}
+export interface ListOnlineUsersResponsePayload {
+    data: OnlineUserInfo[];
+}
+
+// --- Tipos para Notificaciones ---
+
+// Tipo para solicitar notificaciones
+export const MessageTypeGetNotifications = "get-notifications";
+
+// Tipo y Payload para la respuesta de notificaciones
+export const MessageTypeNotificationsResponse = "notifications_response"; // CONFIRMAR este tipo con el backend
+
+export interface NotificationInfo {
+  id: number; // o string si es UUID
+  // Ajustar campos según la tabla Event o lo que envíe el handler
+  description: string;
+  otherUserId?: number;
+  otherUserName?: string; // Puede ser útil añadirlo
+  projectId?: number;
+  projectTitle?: string; // Puede ser útil
+  createdAt: string; // Fecha como string ISO 8601 Z
+  isRead?: boolean; // Si el backend marca el estado
+  // Otros campos relevantes...
+}
+
+export interface NotificationsResponsePayload {
+    notifications: NotificationInfo[];
 } 

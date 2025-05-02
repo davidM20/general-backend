@@ -1,22 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import {
+    addWebSocketListener,
+    removeWebSocketListener,
     sendWebSocketMessage,
-    getWebSocketState,
-    setWebSocketMessageHandler,
+    getWebSocketState
 } from '../services/websocket';
+import {
+    MessageTypeGetNotifications, // Constante para la solicitud
+    MessageTypeNotificationsResponse, // Constante para la respuesta
+    NotificationsResponsePayload, // Payload de la respuesta
+    NotificationInfo, // Tipo de dato individual
+    MessageTypeError // Para errores
+} from '../types/websocket';
 import { toast } from 'react-toastify';
-
-// Interface para la estructura de Event (simplificada)
-interface NotificationEvent {
-    Id: number;
-    Description: string;
-    UserId: number;
-    OtherUserId?: number | null;
-    ProyectId?: number | null;
-    CreateAt: string; // Asumiendo que llega como string ISO
-    // IsRead no se incluye ya que se eliminó
-}
 
 // Tipo para el mensaje parseado
 interface ParsedWebSocketMessage {
@@ -29,10 +26,9 @@ const TestNotifications: React.FC = () => {
     const { token } = useAuth();
     const [isConnected, setIsConnected] = useState<boolean>(false);
     const [notificationIdsToMark, setNotificationIdsToMark] = useState<string>('');
-
-    // Estados para mostrar resultados
-    const [notifications, setNotifications] = useState<NotificationEvent[] | null>(null);
-    const [notificationError, setNotificationError] = useState<string | null>(null);
+    const [notifications, setNotifications] = useState<NotificationInfo[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const checkConnection = () => {
@@ -46,20 +42,20 @@ const TestNotifications: React.FC = () => {
             const parsedData = event.data as ParsedWebSocketMessage;
 
             if (parsedData.type === 'get-notifications') {
-                setNotificationError(null);
-                setNotifications(parsedData.payload as NotificationEvent[]);
+                setError(null);
+                setNotifications(parsedData.payload as NotificationInfo[]);
                 console.log('Received notifications:', parsedData.payload);
             } else if (parsedData.type === 'error' && parsedData.error?.includes('notification')) { 
                 // Intentar detectar errores relacionados con notificaciones
                 console.error('Notification error from backend:', parsedData.error);
-                setNotificationError(parsedData.error || 'Unknown error fetching notifications');
-                setNotifications(null);
+                setError(parsedData.error || 'Unknown error fetching notifications');
+                setNotifications([]);
             }
              // Ignorar otros tipos de mensajes
         };
 
         // Registrar handler
-        setWebSocketMessageHandler(handleWsMessage);
+        // setWebSocketMessageHandler(handleWsMessage); // <-- Eliminar esto
 
         return () => {
             clearInterval(intervalId);
@@ -67,25 +63,83 @@ const TestNotifications: React.FC = () => {
         };
     }, []);
 
-    const handleGetNotifications = () => {
-        if (!isConnected) {
-            toast.error('WebSocket is not connected. Please connect first.');
+    // Callback para manejar la respuesta de notificaciones
+    const handleNotificationsResponse = useCallback((payload: NotificationsResponsePayload, errorMsg?: string) => {
+        console.log("handleNotificationsResponse called:", payload, "Error:", errorMsg);
+        setIsLoading(false);
+        if (errorMsg) {
+            const message = `Failed to get notifications: ${errorMsg}`;
+            setError(message);
+            toast.error(message);
+            setNotifications([]);
+        } else if (payload && payload.notifications) {
+            setNotifications(payload.notifications);
+            setError(null);
+            toast.success(`${payload.notifications.length} notifications received.`);
+        } else {
+             const message = "Received empty or invalid data for notifications.";
+             setError(message);
+             toast.warn(message);
+             setNotifications([]);
+        }
+    }, []);
+
+    // Callback para manejar errores generales de WS
+    const handleErrorResponse = useCallback((payload: { error: string } | any, errorMsg?: string) => {
+        setIsLoading(false);
+        const message = errorMsg || payload?.error || "An unknown WebSocket error occurred.";
+        console.error("handleErrorResponse (Notifications) called:", message);
+        setError(message);
+        toast.error(message);
+        setNotifications([]); // Limpiar datos en caso de error
+    }, []);
+
+    // Efecto para registrar/desregistrar listeners
+    useEffect(() => {
+        // Eliminar completamente la lógica anterior que usaba setWebSocketMessageHandler
+        /*
+        const checkConnection = () => { ... };
+        const handleWsMessage = (event: MessageEvent) => { ... };
+        setWebSocketMessageHandler(handleWsMessage); // <-- Eliminar esto
+        */
+
+        // Nueva lógica con addWebSocketListener
+        console.log("Registering WS listeners for notifications page...");
+        addWebSocketListener(MessageTypeNotificationsResponse, handleNotificationsResponse);
+        addWebSocketListener(MessageTypeError, handleErrorResponse);
+
+        // Solicitar notificaciones al montar si WS está conectado
+         if (getWebSocketState() === WebSocket.OPEN) {
+              fetchNotifications();
+         } else {
+              setError("WebSocket not connected on mount.");
+         }
+
+        // Función de limpieza al desmontar
+        return () => {
+            console.log("Unregistering WS listeners for notifications page...");
+            removeWebSocketListener(MessageTypeNotificationsResponse, handleNotificationsResponse);
+            removeWebSocketListener(MessageTypeError, handleErrorResponse);
+        };
+    }, [handleNotificationsResponse, handleErrorResponse]);
+
+    // Función para solicitar notificaciones
+    const fetchNotifications = () => {
+        const wsState = getWebSocketState();
+        if (wsState !== WebSocket.OPEN) {
+            toast.error("WebSocket is not connected. Cannot fetch notifications.");
+            setError("WebSocket is not connected.");
             return;
         }
-        // Limpiar estado previo
-        setNotifications(null);
-        setNotificationError(null);
-
-        const message = { type: 'get-notifications', payload: {} };
-        try {
-            sendWebSocketMessage(message);
-            toast.info('Request sent: get-notifications.');
-        } catch (e) {
-            console.error('Error sending get-notifications request:', e);
-            const errorMsg = e instanceof Error ? e.message : String(e);
-            toast.error(`Failed to send get-notifications request: ${errorMsg}`);
-            setNotificationError(`Frontend error sending request: ${errorMsg}`);
-        }
+        setIsLoading(true);
+        setError(null);
+        setNotifications([]); // Limpiar datos anteriores
+        console.log(`Sending '${MessageTypeGetNotifications}' request via WebSocket...`);
+        sendWebSocketMessage({
+            type: MessageTypeGetNotifications,
+            payload: {} // Sin payload necesario para get-notifications
+        });
+        toast.info("Request sent for notifications.");
     };
 
     const handleMarkNotificationsRead = () => {
@@ -129,41 +183,24 @@ const TestNotifications: React.FC = () => {
 
     return (
         <div>
-            <h2>Notifications (WS)</h2>
-            <p>Obtener notificaciones.</p> 
-            <p>Estado de WebSocket: <strong>{isConnected ? 'Conectado' : 'Desconectado'}</strong></p>
-            {!token && <p style={{color: 'orange'}}>Advertencia: No hay token JWT.</p>}
-            {!isConnected && token && <p style={{color: 'orange'}}>Advertencia: WebSocket desconectado. Ve a 'Connect (WS)'.</p>}
+            <h2>Notifications (WebSocket Test)</h2>
+            <button onClick={fetchNotifications} disabled={isLoading || getWebSocketState() !== WebSocket.OPEN}>
+                {isLoading ? 'Loading...' : 'Fetch Notifications'}
+            </button>
+            {getWebSocketState() !== WebSocket.OPEN && <p style={{color: 'orange', display: 'inline', marginLeft: '10px'}}>WebSocket Disconnected</p>}
 
-            <div style={{ marginTop: '1rem' }}>
-                <button
-                    onClick={handleGetNotifications}
-                    disabled={!isConnected}
-                    style={{ marginRight: '1rem' }}
-                >
-                    Get My Notifications
-                </button>
-            </div>
+            {error && <p style={{ color: 'red', marginTop: '10px' }}>Error: {error}</p>}
 
-            {/* Sección para mostrar resultados */}        
-             <div style={{ marginTop: '1rem', border: '1px solid #eee', padding: '1rem', minHeight: '150px', background: '#f8f8f8' }}>
-                <h3>Response:</h3>
-                {notificationError && (
-                    <div style={{ color: 'red', marginBottom: '1rem' }}>
-                        <strong>Error:</strong> {notificationError}
-                    </div>
+            <div style={{ marginTop: '20px', background: '#f9f9f9', padding: '15px', borderRadius: '5px', border: '1px solid #eee', minHeight: '200px' }}>
+                <h3>Notifications Received:</h3>
+                {notifications.length > 0 ? (
+                    <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+                        {JSON.stringify(notifications, null, 2)}
+                    </pre>
+                ) : (
+                     !isLoading && !error && getWebSocketState() === WebSocket.OPEN && <p>No notifications received or list is empty.</p>
                 )}
-                {notifications && (
-                    <div>
-                        <h4>Notifications ({notifications.length})</h4>
-                        <pre style={{ maxHeight: '300px', overflowY: 'auto', background: 'white', padding: '0.5rem' }}>
-                            {JSON.stringify(notifications, null, 2)}
-                        </pre>
-                    </div>
-                )}
-                 {!notificationError && !notifications && (
-                     <p>Click the button above to request notifications.</p>
-                )}
+                 {isLoading && <p>Loading notifications...</p>}
             </div>
 
             <hr style={{ margin: '2rem 0' }}/>
