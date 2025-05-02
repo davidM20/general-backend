@@ -18,6 +18,7 @@ import TestRegisterEnterprise from './pages/TestRegisterEnterprise';
 import TestUploadMedia from './pages/TestUploadMedia';
 import TestListRequests from './pages/TestListRequests';
 import TestNotifications from './pages/TestNotifications';
+import TestMyProfileWS from './pages/TestMyProfileWS';
 // Placeholder para otras páginas
 const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => <div><h2>{title}</h2><p>Página en construcción...</p></div>;
 
@@ -46,6 +47,7 @@ function App() {
             <Route path="ws/chat" element={<TestSendChatMessage />} />
             <Route path="ws/lists" element={<TestListRequests />} />
             <Route path="ws/notifications" element={<TestNotifications />} />
+            <Route path="test-my-profile-ws" element={<TestMyProfileWS />} />
             {/* Añadir más rutas WS aquí */}
 
             {/* Ruta Catch-all para 404 dentro del layout */}

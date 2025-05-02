@@ -33,6 +33,7 @@ export const connectWebSocket = (token: string) => {
         console.log('WebSocket message received:', event.data);
         try {
             const parsedData = JSON.parse(event.data);
+            
             // Aquí podrías tener lógica para procesar diferentes tipos de mensajes
             messageHandler?.({ ...event, data: parsedData }); // Pasar datos parseados
         } catch (e) {

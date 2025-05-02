@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './Sidebar.css'; // Crearemos este archivo para estilos
 
@@ -29,6 +29,7 @@ const Sidebar: React.FC = () => {
         { path: '/ws/chat', name: 'Send Chat Message (WS)' },
         { path: '/ws/lists', name: 'List Requests (WS)' },
         { path: '/ws/notifications', name: 'Notifications (WS)' },
+        { path: '/test-my-profile-ws', name: 'Get My Profile (WS)' },
         // ... añadir más acciones WS
     ];
 

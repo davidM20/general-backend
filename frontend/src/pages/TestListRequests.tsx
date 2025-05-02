@@ -65,41 +65,42 @@ const TestListRequests: React.FC = () => {
         // Definir el handler para mensajes WebSocket específicos de esta página
         const handleWsMessage = (event: MessageEvent) => {
             // event.data ya debería estar parseado por el servicio websocket.ts
-            const parsedData = event.data as ParsedWebSocketMessage; 
+            const parsedData = event.data as ParsedWebSocketMessage;
+            console.log("Received Parsed WS Message:", parsedData); // Log adicional
 
-            // Solo procesar mensajes de tipo 'list' que son respuestas a nuestras solicitudes
-            if (parsedData.type === 'list') { 
-                setListError(null); // Limpiar error previo
-                const { listType, data } = parsedData.payload;
-                console.log(`Received list response for type: ${listType}`, data);
-                switch (listType) {
-                    case 'contacts':
-                        setContacts(data as ContactInfo[]);
-                        setChats(null); // Limpiar otros estados
-                        setOnlineUsers(null);
-                        break;
-                    case 'chats':
-                        setChats(data as ChatInfo[]);
-                        setContacts(null);
-                        setOnlineUsers(null);
-                        break;
-                    case 'online_users':
-                        setOnlineUsers(data as OnlineUserInfo[]);
-                        setContacts(null);
-                        setChats(null);
-                        break;
-                    default:
-                        console.warn('Received unknown list type:', listType);
-                        setListError(`Received unknown list type in payload: ${listType}`);
-                        break;
-                }
-            } else if (parsedData.type === 'error' && parsedData.payload?.requestType === 'list') {
-                 // Si el backend envía un error específico para la lista
-                 console.error('List request error from backend:', parsedData.error || parsedData.payload?.message);
-                 setListError(parsedData.error || parsedData.payload?.message || 'Unknown error fetching list');
-                 setContacts(null);
-                 setChats(null);
-                 setOnlineUsers(null);
+            // Adaptar para los nuevos tipos de respuesta de lista
+            switch (parsedData.type) {
+                case 'list_contacts_response':
+                    setListError(null);
+                    setContacts(parsedData.payload.data as ContactInfo[]);
+                    setChats(null); // Limpiar otros estados
+                    setOnlineUsers(null);
+                    break;
+                case 'list_chats_response':
+                    setListError(null);
+                    setChats(parsedData.payload.data as ChatInfo[]);
+                    setContacts(null);
+                    setOnlineUsers(null);
+                    break;
+                case 'list_online_users_response':
+                    setListError(null);
+                    setOnlineUsers(parsedData.payload.data as OnlineUserInfo[]);
+                    setContacts(null);
+                    setChats(null);
+                    break;
+                // Manejar errores generales enviados por el backend
+                case 'error': 
+                    console.error('Error message from backend:', parsedData.payload?.error || 'Unknown error');
+                    setListError(parsedData.payload?.error || 'Received error from backend');
+                    setContacts(null);
+                    setChats(null);
+                    setOnlineUsers(null);
+                    break;
+                // Ignorar otros tipos de mensajes no relevantes para esta página
+                default:
+                    // No hacer nada o loguear si es inesperado para esta página
+                    // console.log('Ignoring message type:', parsedData.type);
+                    break;
             }
         };
 

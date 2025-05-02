@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 )
 
@@ -282,3 +283,49 @@ type WebSocketMessage struct {
 	Type    string      `json:"type"` // Corresponds to MessageType* constants
 	Payload interface{} `json:"payload"`
 }
+
+// UserBaseInfo contiene un subconjunto de información del usuario, útil para identificación básica.
+type UserBaseInfo struct {
+	ID        int64  `json:"id"`
+	FirstName string `json:"firstName,omitempty"` // Usar string directamente, se manejará NULL en Scan
+	LastName  string `json:"lastName,omitempty"`  // Usar string directamente
+	UserName  string `json:"userName"`
+	Picture   string `json:"picture,omitempty"` // Usar string directamente
+	RoleId    int    `json:"roleId"`
+}
+
+// GetUserBaseInfo recupera la información básica de un usuario por su ID.
+func GetUserBaseInfo(db *sql.DB, userID int64) (*UserBaseInfo, error) {
+	user := &UserBaseInfo{}
+	query := `SELECT Id, FirstName, LastName, UserName, Picture, RoleId FROM User WHERE Id = ?`
+
+	// Variables para escanear campos que pueden ser NULL
+	var firstName, lastName, picture sql.NullString
+
+	err := db.QueryRow(query, userID).Scan(
+		&user.ID,
+		&firstName,
+		&lastName,
+		&user.UserName, // Asumimos que UserName no es NULL por UNIQUE
+		&picture,
+		&user.RoleId, // Asumimos que RoleId no es NULL
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Devuelve un error específico si el usuario no se encuentra
+			return nil, fmt.Errorf("user with ID %d not found", userID)
+		}
+		// Devuelve otros errores de la base de datos
+		return nil, fmt.Errorf("error querying base user info for ID %d: %w", userID, err)
+	}
+
+	// Asignar valores desde sql.NullString a string (será "" si es NULL)
+	user.FirstName = firstName.String
+	user.LastName = lastName.String
+	user.Picture = picture.String
+
+	return user, nil
+}
+
+// GetDefaultNationalities devuelve una lista de nacionalidades por defecto
