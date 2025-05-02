@@ -224,7 +224,7 @@ export interface ListOnlineUsersResponsePayload {
 // --- Tipos para Notificaciones ---
 
 // Tipo para solicitar notificaciones
-export const MessageTypeGetNotifications = "get-notifications";
+export const MessageTypeGetNotifications = "get-notifications"
 
 // Tipo y Payload para la respuesta de notificaciones
 export const MessageTypeNotificationsResponse = "notifications_response"; // CONFIRMAR este tipo con el backend
