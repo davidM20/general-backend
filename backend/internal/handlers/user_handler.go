@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"log"
-
-	"github.com/davidM20/micro-service-backend-go.git/internal/auth" // Para obtener UserID del token
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
 // UserHandler maneja las peticiones relacionadas con los usuarios
@@ -22,26 +20,17 @@ func NewUserHandler(db *sql.DB) *UserHandler {
 	return &UserHandler{DB: db}
 }
 
-// GetMyProfile obtiene el perfil del usuario autenticado actualmente
+// GetMyProfile devuelve el perfil del usuario autenticado
 func (h *UserHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
-	// Obtener el ID del usuario del contexto (establecido por el middleware)
-	userIDCtx := r.Context().Value(auth.UserIDKey) // Usar la clave correcta
-	if userIDCtx == nil {
-		log.Println("GetMyProfile Error: User ID not found in context")
-		http.Error(w, "User not authenticated properly", http.StatusUnauthorized)
-		return
-	}
-	// Hacer type assertion a int64
-	userID, ok := userIDCtx.(int64)
-	if !ok {
-		log.Println("GetMyProfile Error: Invalid User ID type in context")
-		http.Error(w, "Invalid user information", http.StatusInternalServerError)
+	// Obtener UserID del contexto (puesto por AuthMiddleware)
+	userID, exists := r.Context().Value("userID").(int64)
+	if !exists {
+		logger.Error("USER", "GetMyProfile Error: User ID not found in context")
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
 		return
 	}
 
 	var user models.User
-	// Recuperar usuario de la BD usando el userID del token
-	// Asegúrate de seleccionar todos los campos necesarios excepto la contraseña
 	err := h.DB.QueryRow(`
         SELECT Id, FirstName, LastName, UserName, Email, Phone, Sex, DocId, NationalityId, Birthdate, Picture, DegreeId, UniversityId, RoleId, StatusAuthorizedId, Summary, Address, Github, Linkedin
         FROM User WHERE Id = ?
@@ -49,15 +38,13 @@ func (h *UserHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 		&user.Id, &user.FirstName, &user.LastName, &user.UserName, &user.Email, &user.Phone, &user.Sex, &user.DocId, &user.NationalityId, &user.Birthdate, &user.Picture, &user.DegreeId, &user.UniversityId, &user.RoleId, &user.StatusAuthorizedId, &user.Summary, &user.Address, &user.Github, &user.Linkedin,
 	)
 
-	if err == sql.ErrNoRows {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
 	if err != nil {
-		log.Printf("Error fetching user profile (ID: %d): %v", userID, err)
-		http.Error(w, "Failed to retrieve profile", http.StatusInternalServerError)
+		logger.Errorf("USER", "Error fetching user profile (ID: %d): %v", userID, err)
+		http.Error(w, "Error fetching profile", http.StatusInternalServerError)
 		return
 	}
+
+	logger.Successf("USER", "Profile fetched successfully for UserID: %d", userID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

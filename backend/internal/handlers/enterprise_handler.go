@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"log"
-
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	// Importar auth si necesitas verificar roles
 )
 
@@ -55,7 +54,7 @@ func (h *EnterpriseHandler) RegisterEnterprise(w http.ResponseWriter, r *http.Re
 	var exists bool
 	err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM Enterprise WHERE RIF = ?)", req.RIF).Scan(&exists)
 	if err != nil {
-		log.Printf("Error checking enterprise RIF existence: %v", err)
+		logger.Errorf("ENTERPRISE", "Error checking enterprise RIF existence: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
@@ -70,14 +69,14 @@ func (h *EnterpriseHandler) RegisterEnterprise(w http.ResponseWriter, r *http.Re
         VALUES (?, ?, ?, ?, ?, ?)
     `, req.RIF, req.CompanyName, req.CategoryId, req.Description, req.Location, req.Phone)
 	if err != nil {
-		log.Printf("Error inserting enterprise: %v", err)
+		logger.Errorf("ENTERPRISE", "Error inserting enterprise: %v", err)
 		http.Error(w, "Failed to register enterprise", http.StatusInternalServerError)
 		return
 	}
 
 	enterpriseID, err := result.LastInsertId()
 	if err != nil {
-		log.Printf("Error getting last insert ID for enterprise: %v", err)
+		logger.Errorf("ENTERPRISE", "Error getting last insert ID for enterprise: %v", err)
 		http.Error(w, "Error processing registration", http.StatusInternalServerError)
 		return
 	}

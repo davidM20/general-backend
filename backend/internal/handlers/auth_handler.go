@@ -10,10 +10,10 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/auth"   // Para JWT y hash de contraseña
 	"github.com/davidM20/micro-service-backend-go.git/internal/config" // Importar config
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	"github.com/gorilla/mux"
 
 	// Importa otros paquetes necesarios (ej. para validación, logging)
-	"log"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -47,7 +47,7 @@ func (h *AuthHandler) RegisterStep1(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM User WHERE Email = ? OR UserName = ?)", req.Email, req.UserName).Scan(&exists)
 	if err != nil {
-		log.Printf("Error checking user existence: %v", err)
+		logger.Errorf("REGISTER", "Error checking user existence for %s: %v", req.Email, err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
@@ -59,7 +59,7 @@ func (h *AuthHandler) RegisterStep1(w http.ResponseWriter, r *http.Request) {
 	// Hashear la contraseña
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("Error hashing password: %v", err)
+		logger.Errorf("REGISTER", "Error hashing password for %s: %v", req.Email, err)
 		http.Error(w, "Error processing registration", http.StatusInternalServerError)
 		return
 	}
@@ -75,20 +75,21 @@ func (h *AuthHandler) RegisterStep1(w http.ResponseWriter, r *http.Request) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, req.FirstName, req.LastName, req.UserName, string(hashedPassword), req.Email, req.Phone, defaultRoleId, defaultStatusId)
 	if err != nil {
-		log.Printf("Error inserting user step 1: %v", err)
+		logger.Errorf("REGISTER", "Error inserting user step 1 for %s: %v", req.Email, err)
 		http.Error(w, "Failed to register user", http.StatusInternalServerError)
 		return
 	}
 
 	userID, err := result.LastInsertId()
 	if err != nil {
-		log.Printf("Error getting last insert ID: %v", err)
+		logger.Errorf("REGISTER", "Error getting last insert ID for %s: %v", req.Email, err)
 		http.Error(w, "Error processing registration", http.StatusInternalServerError)
 		return
 	}
 
 	// TODO: Generar un token de verificación/temporal y enviarlo (email?)
 	// Devolver el ID del usuario para los siguientes pasos (o el token temporal)
+	logger.Successf("REGISTER", "User %s completed step 1 registration with ID %d", req.Email, userID)
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Step 1 complete", "userId": userID})
 }
@@ -119,7 +120,7 @@ func (h *AuthHandler) RegisterStep2(w http.ResponseWriter, r *http.Request) {
 	var exists bool
 	err = h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM User WHERE DocId = ? AND Id != ?)", req.DocId, userID).Scan(&exists)
 	if err != nil {
-		log.Printf("Error checking DocId existence: %v", err)
+		logger.Errorf("REGISTER", "Error checking DocId existence for %s: %v", req.DocId, err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
@@ -132,11 +133,12 @@ func (h *AuthHandler) RegisterStep2(w http.ResponseWriter, r *http.Request) {
 	_, err = h.DB.Exec("UPDATE User SET DocId = ?, NationalityId = ? WHERE Id = ?",
 		req.DocId, req.NationalityId, userID)
 	if err != nil {
-		log.Printf("Error updating user step 2: %v", err)
+		logger.Errorf("REGISTER", "Error updating user step 2 for UserID %d: %v", userID, err)
 		http.Error(w, "Failed to update registration", http.StatusInternalServerError)
 		return
 	}
 
+	logger.Successf("REGISTER", "User ID %d completed step 2 registration", userID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Step 2 complete"})
 }
@@ -171,11 +173,12 @@ func (h *AuthHandler) RegisterStep3(w http.ResponseWriter, r *http.Request) {
 	_, err = h.DB.Exec("UPDATE User SET Sex = ?, Birthdate = ?, RoleId = ?, StatusAuthorizedId = ? WHERE Id = ?",
 		req.Sex, req.Birthdate, finalRoleId, finalStatusId, userID)
 	if err != nil {
-		log.Printf("Error updating user step 3: %v", err)
+		logger.Errorf("REGISTER", "Error updating user step 3 for UserID %d: %v", userID, err)
 		http.Error(w, "Failed to complete registration", http.StatusInternalServerError)
 		return
 	}
 
+	logger.Successf("REGISTER", "User ID %d completed full registration", userID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Registration complete"})
 }
@@ -216,13 +219,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		// Loguear el error específico de Scan para depuración
-		log.Printf("Error scanning user data: %v", err)
+		logger.Errorf("LOGIN", "Error scanning user data for %s: %v", req.Email, err)
 		http.Error(w, "Login failed due to server error", http.StatusInternalServerError)
 		return
 	}
 
 	if user.StatusAuthorizedId != 1 { // Asumiendo 1 = Active
-		log.Printf("Login attempt for inactive account: UserID %d, StatusID %d", user.Id, user.StatusAuthorizedId)
+		logger.Warnf("LOGIN", "Login attempt for inactive account: UserID %d, StatusID %d", user.Id, user.StatusAuthorizedId)
 		http.Error(w, "Account is not active", http.StatusForbidden)
 		return
 	}
@@ -242,7 +245,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	expirationTime := 24 * time.Hour
 	tokenString, err := auth.GenerateJWT(user.Id, int64(user.RoleId), []byte(h.Cfg.JwtSecret), expirationTime)
 	if err != nil {
-		log.Printf("Login Error: Failed generating JWT for UserID %d: %v", user.Id, err)
+		logger.Errorf("LOGIN", "Failed generating JWT for UserID %d: %v", user.Id, err)
 		http.Error(w, "Error generating session token", http.StatusInternalServerError)
 		return
 	}
@@ -254,6 +257,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		User:  user,
 	}
 
+	logger.Successf("LOGIN", "User %s (ID: %d) logged in successfully", req.Email, user.Id)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)

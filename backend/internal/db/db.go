@@ -3,12 +3,12 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models" // Ajusta la ruta si es necesario
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -38,7 +38,7 @@ func Connect(dsn string) (*sql.DB, error) {
 			once = sync.Once{} // Reset once so connection can be retried
 			return
 		}
-		log.Println("Database connection successful!")
+		logger.Success("DB", "Database connection successful!")
 	})
 
 	if err != nil {
@@ -54,7 +54,7 @@ func Connect(dsn string) (*sql.DB, error) {
 // It's recommended to call Connect first.
 func GetDB() *sql.DB {
 	if db == nil {
-		log.Println("Warning: GetDB called before Connect or connection failed.")
+		logger.Warn("DB", "Warning: GetDB called before Connect or connection failed.")
 		// Depending on the strategy, you might want to panic or attempt reconnection here.
 	}
 	return db
@@ -84,7 +84,7 @@ func InitializeDatabase(conn *sql.DB) error {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	log.Println("Database initialized successfully.")
+	logger.Success("DB", "Database initialized successfully.")
 	return nil
 }
 
@@ -335,18 +335,18 @@ func createTables(tx *sql.Tx) error {
 		_, err := tx.Exec(trimmedStmt) // Ejecutar cada sentencia
 		if err != nil {
 			// Loguear la sentencia específica que falló para facilitar la depuración
-			log.Printf("Error executing statement: %s", trimmedStmt)
+			logger.Errorf("DB", "Error executing statement: %s", trimmedStmt)
 			return fmt.Errorf("error executing schema creation statement: %w", err)
 		}
 	}
 
-	log.Println("Tables created or already exist.")
+	logger.Success("DB", "Tables created or already exist.")
 	return nil
 }
 
 // insertDefaultData populates tables with initial values, ignoring duplicates.
 func insertDefaultData(tx *sql.Tx) error {
-	log.Println("Inserting default data...")
+	logger.Info("DB", "Inserting default data...")
 
 	// Insert Nationalities
 	stmtNat, err := tx.Prepare("INSERT IGNORE INTO Nationality (CountryName, IsoCode, DocIdFormat) VALUES (?, ?, ?)")
@@ -357,7 +357,7 @@ func insertDefaultData(tx *sql.Tx) error {
 	for _, nat := range models.GetDefaultNationalities() {
 		_, err := stmtNat.Exec(nat.CountryName, nat.IsoCode, nat.DocIdFormat)
 		if err != nil {
-			log.Printf("Failed to insert nationality %s: %v", nat.CountryName, err)
+			logger.Warnf("DB", "Failed to insert nationality %s: %v", nat.CountryName, err)
 			// Continue trying to insert others
 		}
 	}
@@ -371,7 +371,7 @@ func insertDefaultData(tx *sql.Tx) error {
 	for _, status := range models.GetDefaultStatusAuthorized() {
 		_, err := stmtStatus.Exec(status.Id, status.Name)
 		if err != nil {
-			log.Printf("Failed to insert status %s: %v", status.Name, err)
+			logger.Warnf("DB", "Failed to insert status %s: %v", status.Name, err)
 		}
 	}
 
@@ -384,7 +384,7 @@ func insertDefaultData(tx *sql.Tx) error {
 	for _, token := range models.GetDefaultTokensType() {
 		_, err := stmtToken.Exec(token.Id, token.TokenType)
 		if err != nil {
-			log.Printf("Failed to insert token type %s: %v", token.TokenType, err)
+			logger.Warnf("DB", "Failed to insert token type %s: %v", token.TokenType, err)
 		}
 	}
 
@@ -397,7 +397,7 @@ func insertDefaultData(tx *sql.Tx) error {
 	for _, role := range models.GetDefaultRoles() {
 		_, err := stmtRole.Exec(role.Id, role.Name)
 		if err != nil {
-			log.Printf("Failed to insert role %s: %v", role.Name, err)
+			logger.Warnf("DB", "Failed to insert role %s: %v", role.Name, err)
 		}
 	}
 
@@ -411,21 +411,21 @@ func insertDefaultData(tx *sql.Tx) error {
 	for _, uni := range models.GetDefaultUniversities() {
 		res, err := stmtUni.Exec(uni.Name, uni.Campus)
 		if err != nil {
-			log.Printf("Failed to insert university %s: %v", uni.Name, err)
+			logger.Warnf("DB", "Failed to insert university %s: %v", uni.Name, err)
 			// Try to fetch existing ID if insertion failed due to duplicate
 			row := tx.QueryRow("SELECT Id FROM University WHERE Name = ?", uni.Name)
 			var id int64
 			if scanErr := row.Scan(&id); scanErr == nil {
 				uniIDs[uni.Name] = id
 			} else {
-				log.Printf("Failed to fetch existing ID for university %s: %v", uni.Name, scanErr)
+				logger.Warnf("DB", "Failed to fetch existing ID for university %s: %v", uni.Name, scanErr)
 			}
 		} else {
 			id, err := res.LastInsertId()
 			if err == nil {
 				uniIDs[uni.Name] = id
 			} else {
-				log.Printf("Failed to get last insert ID for university %s: %v", uni.Name, err)
+				logger.Warnf("DB", "Failed to get last insert ID for university %s: %v", uni.Name, err)
 			}
 		}
 	}
@@ -452,13 +452,13 @@ func insertDefaultData(tx *sql.Tx) error {
 
 		uniID, ok := uniIDs[uniName]
 		if !ok || uniName == "" {
-			log.Printf("Skipping degree %s: Could not find University ID for assumed name '%s' (original ID: %d)", deg.DegreeName, uniName, deg.UniversityId)
+			logger.Warnf("DB", "Skipping degree %s: Could not find University ID for assumed name '%s' (original ID: %d)", deg.DegreeName, uniName, deg.UniversityId)
 			continue
 		}
 
 		_, err := stmtDegree.Exec(deg.DegreeName, deg.Descriptions, deg.Code, uniID)
 		if err != nil {
-			log.Printf("Failed to insert degree %s: %v", deg.DegreeName, err)
+			logger.Warnf("DB", "Failed to insert degree %s: %v", deg.DegreeName, err)
 		}
 	}
 
@@ -471,11 +471,11 @@ func insertDefaultData(tx *sql.Tx) error {
 	for _, msgType := range models.GetDefaultTypeMessages() {
 		_, err := stmtMsgType.Exec(msgType.Id, msgType.Name, msgType.Description)
 		if err != nil {
-			log.Printf("Failed to insert message type %s: %v", msgType.Name, err)
+			logger.Warnf("DB", "Failed to insert message type %s: %v", msgType.Name, err)
 		}
 	}
 
-	log.Println("Finished inserting default data.")
+	logger.Success("DB", "Finished inserting default data.")
 	return nil
 }
 
@@ -486,7 +486,7 @@ func GetAllCategories() ([]models.Category, error) {
 	}
 	rows, err := db.Query("SELECT CategoryId, Name FROM Category ORDER BY Name ASC")
 	if err != nil {
-		log.Printf("Error querying categories: %v", err)
+		logger.Errorf("DB", "Error querying categories: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -495,13 +495,13 @@ func GetAllCategories() ([]models.Category, error) {
 	for rows.Next() {
 		var category models.Category
 		if err := rows.Scan(&category.CategoryId, &category.Name); err != nil {
-			log.Printf("Error scanning category row: %v", err)
+			logger.Errorf("DB", "Error scanning category row: %v", err)
 			continue // Skip problematic rows
 		}
 		categories = append(categories, category)
 	}
 	if err = rows.Err(); err != nil {
-		log.Printf("Error iterating category rows: %v", err)
+		logger.Errorf("DB", "Error iterating category rows: %v", err)
 		return nil, err
 	}
 	return categories, nil
@@ -516,7 +516,7 @@ func CheckCategoryExistsByName(name string) (bool, error) {
 	query := "SELECT EXISTS(SELECT 1 FROM Category WHERE Name = ?)"
 	err := db.QueryRow(query, name).Scan(&exists)
 	if err != nil {
-		log.Printf("Error checking category existence by name %s: %v", name, err)
+		logger.Errorf("DB", "Error checking category existence by name %s: %v", name, err)
 		return false, err
 	}
 	return exists, nil
@@ -531,14 +531,14 @@ func AddCategory(name string) (models.Category, error) {
 	query := "INSERT INTO Category (Name) VALUES (?)"
 	result, err := db.Exec(query, name)
 	if err != nil {
-		log.Printf("Error inserting category %s: %v", name, err)
+		logger.Errorf("DB", "Error inserting category %s: %v", name, err)
 		// Consider checking for specific duplicate entry errors if needed
 		return models.Category{}, err
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		log.Printf("Error getting last insert ID for category %s: %v", name, err)
+		logger.Errorf("DB", "Error getting last insert ID for category %s: %v", name, err)
 		// The insert succeeded, but we can't get the ID easily.
 		// Return a category with name only, or handle differently.
 		return models.Category{Name: name}, err

@@ -3,12 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	// "github.com/davidM20/micro-service-backend-go.git/internal/utils" // Import comentado
 )
 
@@ -23,7 +23,7 @@ func respondWithError(w http.ResponseWriter, code int, message string) {
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	response, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("Error marshaling JSON response: %v", err)
+		logger.Errorf("CATEGORY", "Error marshaling JSON response: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(fmt.Sprintf(`{"error":"Internal Server Error: %v"}`, err)))
 		return
@@ -47,7 +47,7 @@ func NewCategoryHandler() *CategoryHandler {
 func (h *CategoryHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	categories, err := db.GetAllCategories()
 	if err != nil {
-		log.Printf("Error getting categories from DB: %v", err)
+		logger.Errorf("CATEGORY", "Error getting categories from DB: %v", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve categories")
 		return
 	}
@@ -83,7 +83,7 @@ func (h *CategoryHandler) AddCategory(w http.ResponseWriter, r *http.Request) {
 	// Verificar si ya existe
 	exists, err := db.CheckCategoryExistsByName(categoryName)
 	if err != nil {
-		log.Printf("Error checking category existence for '%s': %v", categoryName, err)
+		logger.Errorf("CATEGORY", "Error checking category existence for '%s': %v", categoryName, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to check category existence")
 		return
 	}
@@ -95,7 +95,7 @@ func (h *CategoryHandler) AddCategory(w http.ResponseWriter, r *http.Request) {
 	// Añadir la categoría
 	newCategory, err := db.AddCategory(categoryName)
 	if err != nil {
-		log.Printf("Error adding category '%s': %v", categoryName, err)
+		logger.Errorf("CATEGORY", "Error adding category '%s': %v", categoryName, err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to add category")
 		return
 	}

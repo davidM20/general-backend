@@ -4,12 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/auth"
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/saveimage" // Importar paquete
 )
 
@@ -38,12 +38,12 @@ func (h *MediaHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("UploadMedia: Received upload request from UserID: %d", userIDTyped)
+	logger.Infof("MEDIA", "UploadMedia: Received upload request from UserID: %d", userIDTyped)
 
 	// 1. Parsear el formulario multipart
 	// Limitar tamaño de la subida (ej. 10 MB)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		log.Printf("UploadMedia Error (UserID: %d): Failed parsing multipart form: %v", userIDTyped, err)
+		logger.Errorf("MEDIA", "UploadMedia Error (UserID: %d): Failed parsing multipart form: %v", userIDTyped, err)
 		http.Error(w, fmt.Sprintf("Error parsing multipart form: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -51,13 +51,13 @@ func (h *MediaHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	// 2. Obtener el archivo (asumimos que el campo se llama 'media')
 	file, handler, err := r.FormFile("media")
 	if err != nil {
-		log.Printf("UploadMedia Error (UserID: %d): Error retrieving 'media' file: %v", userIDTyped, err)
+		logger.Errorf("MEDIA", "UploadMedia Error (UserID: %d): Error retrieving 'media' file: %v", userIDTyped, err)
 		http.Error(w, "Error retrieving 'media' file from form", http.StatusBadRequest)
 		return
 	}
 	defer file.Close() // Asegurarse de cerrar el archivo
 
-	log.Printf("UploadMedia Info (UserID: %d): Processing file: Name=%s, Size=%d, Header=%+v",
+	logger.Infof("MEDIA", "UploadMedia Info (UserID: %d): Processing file: Name=%s, Size=%d, Header=%+v",
 		userIDTyped, handler.Filename, handler.Size, handler.Header)
 
 	// 3. Configurar saveimage
@@ -74,7 +74,7 @@ func (h *MediaHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	// ej. maxWidth=1024, maxHeight=1024
 	saveResult, err := saveimage.SaveImage(handler, storageCfg, 0, 0) // 0, 0 para no redimensionar
 	if err != nil {
-		log.Printf("UploadMedia Error (UserID: %d): Failed saving image: %v", userIDTyped, err)
+		logger.Errorf("MEDIA", "UploadMedia Error (UserID: %d): Failed saving image: %v", userIDTyped, err)
 		http.Error(w, fmt.Sprintf("Failed to save uploaded file: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -98,7 +98,7 @@ func (h *MediaHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 		"",                 // ChatId vacío, ya que no está asociado a un chat específico en esta subida genérica
 	)
 	if err != nil {
-		log.Printf("UploadMedia DB Error (UserID: %d): Failed inserting multimedia record: %v", userIDTyped, err)
+		logger.Errorf("MEDIA", "UploadMedia DB Error (UserID: %d): Failed inserting multimedia record: %v", userIDTyped, err)
 		// Considerar eliminar el archivo subido si la inserción en DB falla?
 		http.Error(w, "Failed to record uploaded media information", http.StatusInternalServerError)
 		return
@@ -109,5 +109,5 @@ func (h *MediaHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(saveResult) // Devolver el resultado de SaveImage
 
-	log.Printf("UploadMedia Success (UserID: %d): Media uploaded. ID: %s, URL: %s", userIDTyped, saveResult.MediaID, saveResult.FileURL)
+	logger.Successf("MEDIA", "UploadMedia Success (UserID: %d): Media uploaded. ID: %s, URL: %s", userIDTyped, saveResult.MediaID, saveResult.FileURL)
 }

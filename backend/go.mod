@@ -11,7 +11,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/koding/websocketproxy v0.0.0-20181220232114-7ed82d81a28c
-	github.com/rs/cors v1.11.1
 	github.com/spf13/viper v1.20.1
 	golang.org/x/crypto v0.37.0
 	google.golang.org/api v0.215.0

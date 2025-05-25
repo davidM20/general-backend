@@ -6,9 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"log"
-
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	"github.com/gorilla/mux"
 )
 
@@ -29,7 +28,7 @@ func (h *MiscHandler) GetNationalities(w http.ResponseWriter, r *http.Request) {
 	/*
 	   rows, err := h.DB.Query("SELECT Id, CountryName, IsoCode, DocIdFormat FROM Nationality ORDER BY CountryName")
 	   if err != nil {
-	       log.Printf("Error querying nationalities: %v", err)
+	       logger.Errorf("MISC", "Error querying nationalities: %v", err)
 	       http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 	       return
 	   }
@@ -39,13 +38,13 @@ func (h *MiscHandler) GetNationalities(w http.ResponseWriter, r *http.Request) {
 	   for rows.Next() {
 	       var nat models.Nationality
 	       if err := rows.Scan(&nat.Id, &nat.CountryName, &nat.IsoCode, &nat.DocIdFormat); err != nil {
-	           log.Printf("Error scanning nationality row: %v", err)
+	           logger.Errorf("MISC", "Error scanning nationality row: %v", err)
 	           continue // O manejar el error de otra forma
 	       }
 	       nationalities = append(nationalities, nat)
 	   }
 	   if err = rows.Err(); err != nil {
-	        log.Printf("Error iterating nationality rows: %v", err)
+	        logger.Errorf("MISC", "Error iterating nationality rows: %v", err)
 	        http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 	        return
 	   }
@@ -61,7 +60,7 @@ func (h *MiscHandler) GetUniversities(w http.ResponseWriter, r *http.Request) {
 	// Leer desde la base de datos
 	rows, err := h.DB.Query("SELECT Id, Name, Campus FROM University ORDER BY Name")
 	if err != nil {
-		log.Printf("Error querying universities: %v", err)
+		logger.Errorf("MISC", "Error querying universities: %v", err)
 		http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 		return
 	}
@@ -71,13 +70,13 @@ func (h *MiscHandler) GetUniversities(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var uni models.University
 		if err := rows.Scan(&uni.Id, &uni.Name, &uni.Campus); err != nil {
-			log.Printf("Error scanning university row: %v", err)
+			logger.Errorf("MISC", "Error scanning university row: %v", err)
 			continue
 		}
 		universities = append(universities, uni)
 	}
 	if err = rows.Err(); err != nil {
-		log.Printf("Error iterating university rows: %v", err)
+		logger.Errorf("MISC", "Error iterating university rows: %v", err)
 		http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 		return
 	}
@@ -99,7 +98,7 @@ func (h *MiscHandler) GetDegreesByUniversity(w http.ResponseWriter, r *http.Requ
 
 	rows, err := h.DB.Query("SELECT Id, DegreeName, Descriptions, Code FROM Degree WHERE UniversityId = ? ORDER BY DegreeName", universityID)
 	if err != nil {
-		log.Printf("Error querying degrees for university %d: %v", universityID, err)
+		logger.Errorf("MISC", "Error querying degrees for university %d: %v", universityID, err)
 		http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 		return
 	}
@@ -110,14 +109,14 @@ func (h *MiscHandler) GetDegreesByUniversity(w http.ResponseWriter, r *http.Requ
 		var deg models.Degree
 		// Omitimos UniversityId al escanear ya que lo tenemos del path
 		if err := rows.Scan(&deg.Id, &deg.DegreeName, &deg.Descriptions, &deg.Code); err != nil {
-			log.Printf("Error scanning degree row: %v", err)
+			logger.Errorf("MISC", "Error scanning degree row: %v", err)
 			continue
 		}
 		deg.UniversityId = universityID // Asignar el ID conocido
 		degrees = append(degrees, deg)
 	}
 	if err = rows.Err(); err != nil {
-		log.Printf("Error iterating degree rows: %v", err)
+		logger.Errorf("MISC", "Error iterating degree rows: %v", err)
 		http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 		return
 	}
@@ -131,7 +130,7 @@ func (h *MiscHandler) GetDegreesByUniversity(w http.ResponseWriter, r *http.Requ
 func (h *MiscHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.Query("SELECT CategoryId, Name, Description FROM Category ORDER BY Name")
 	if err != nil {
-		log.Printf("Error querying categories: %v", err)
+		logger.Errorf("MISC", "Error querying categories: %v", err)
 		http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 		return
 	}
@@ -141,13 +140,13 @@ func (h *MiscHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var cat models.Category
 		if err := rows.Scan(&cat.CategoryId, &cat.Name, &cat.Description); err != nil {
-			log.Printf("Error scanning category row: %v", err)
+			logger.Errorf("MISC", "Error scanning category row: %v", err)
 			continue
 		}
 		categories = append(categories, cat)
 	}
 	if err = rows.Err(); err != nil {
-		log.Printf("Error iterating category rows: %v", err)
+		logger.Errorf("MISC", "Error iterating category rows: %v", err)
 		http.Error(w, "Failed to retrieve data", http.StatusInternalServerError)
 		return
 	}
