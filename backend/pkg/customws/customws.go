@@ -36,6 +36,11 @@ type Connection[TUserData any] struct {
 	cancel   context.CancelFunc
 }
 
+// Manager devuelve el ConnectionManager asociado con esta conexión.
+func (c *Connection[TUserData]) Manager() *ConnectionManager[TUserData] {
+	return c.manager
+}
+
 // Callbacks define las funciones que el usuario de la biblioteca debe implementar
 // para manejar eventos y mensajes específicos de la aplicación.
 type Callbacks[TUserData any] struct {
@@ -86,6 +91,16 @@ type ConnectionManager[TUserData any] struct {
 	// ctx es el contexto raíz para el manager, usado para señalar el cierre.
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	mu sync.RWMutex
+
+	// userConnections es un mapa para almacenar conexiones activas por UserID
+	userConnections map[int64][]*Connection[TUserData]
+}
+
+// Callbacks devuelve la configuración de callbacks del ConnectionManager.
+func (cm *ConnectionManager[TUserData]) Callbacks() Callbacks[TUserData] {
+	return cm.callbacks
 }
 
 // NewConnectionManager crea una nueva instancia de ConnectionManager.
@@ -496,7 +511,7 @@ func (cm *ConnectionManager[TUserData]) SendMessageToUser(userID int64, msg type
 	return fmt.Errorf("usuario %d no conectado o no encontrado", userID)
 }
 
-// BroadcastToAll envía un mensaje a todos los clientes conectados, con opción de excluir ciertos UserIDs.
+// BroadcastToAll envía un mensaje a todas las conexiones activas.
 // Devuelve un mapa de errores, donde la clave es el UserID y el valor es el error ocurrido al enviar a ese usuario.
 // Si no hubo errores, el mapa estará vacío.
 func (cm *ConnectionManager[TUserData]) BroadcastToAll(msg types.ServerToClientMessage, excludeUserIDs ...int64) map[int64]error {
@@ -740,4 +755,12 @@ func (cm *ConnectionManager[TUserData]) Shutdown(ctx context.Context) error {
 
 	logger.Infof(componentLog, "ConnectionManager shutdown completado.")
 	return nil
+}
+
+// IsUserOnline verifica si un usuario con el UserID dado tiene al menos una conexión activa.
+func (cm *ConnectionManager[TUserData]) IsUserOnline(userID int64) bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	conns, exists := cm.userConnections[userID]
+	return exists && len(conns) > 0
 }

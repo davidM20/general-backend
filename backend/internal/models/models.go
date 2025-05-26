@@ -96,8 +96,8 @@ type User struct {
 	Address            sql.NullString `json:"address" db:"Address"`                         // Handle NULL
 	Github             sql.NullString `json:"github" db:"Github"`                           // Handle NULL
 	Linkedin           sql.NullString `json:"linkedin" db:"Linkedin"`                       // Handle NULL
-	// CreateAt           time.Time       `json:"create_at" db:"CreateAt"` // Columna no existe en DB según usuario
-	// UpdateAt           time.Time       `json:"update_at" db:"UpdateAt"` // Columna no existe en DB según usuario
+	CreateAt           time.Time      `json:"create_at" db:"CreateAt"`                      // Descomentado
+	UpdateAt           time.Time      `json:"update_at" db:"UpdateAt"`                      // Descomentado
 }
 
 // Online defines the structure for the Online table.
@@ -160,6 +160,7 @@ type Education struct {
 	Campus         string       `json:"campus" db:"Campus"`
 	GraduationDate sql.NullTime `json:"graduation_date" db:"GraduationDate"` // Handle NULL
 	CountryId      int64        `json:"country_id" db:"CountryId"`
+	CountryName    string       `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
 }
 
 // WorkExperience defines the structure for the WorkExperience table.
@@ -172,6 +173,7 @@ type WorkExperience struct {
 	EndDate     sql.NullTime `json:"end_date" db:"EndDate"`     // Handle NULL
 	Description string       `json:"description" db:"Description"`
 	CountryId   int64        `json:"country_id" db:"CountryId"`
+	CountryName string       `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
 }
 
 // Certifications defines the structure for the Certifications table.
@@ -216,6 +218,8 @@ type Project struct {
 // Event defines the structure for the Event (notifications) table.
 type Event struct {
 	Id          int64         `json:"id" db:"Id"`
+	EventType   string        `json:"eventType" db:"EventType"`   // Nuevo campo para el tipo de evento/notificación
+	EventTitle  string        `json:"eventTitle" db:"EventTitle"` // Nuevo campo para el título del evento/notificación
 	Description string        `json:"description" db:"Description"`
 	UserId      int64         `json:"user_id" db:"UserId"`
 	OtherUserId sql.NullInt64 `json:"other_user_id" db:"OtherUserId"` // Handle NULL
@@ -329,3 +333,21 @@ func GetUserBaseInfo(db *sql.DB, userID int64) (*UserBaseInfo, error) {
 }
 
 // GetDefaultNationalities devuelve una lista de nacionalidades por defecto
+
+// ChatMessage representa un mensaje en la tabla ChatMessage de la base de datos.
+type ChatMessage struct {
+	ID         int64     `json:"id"`
+	ChatID     string    `json:"chatId,omitempty"`   // Opcional, si tienes una tabla de Chat separada o para identificar el chat (ej. "user_1_user_2")
+	FromUserID int64     `json:"fromUserId"`         // ID del remitente (tabla User)
+	ToUserID   int64     `json:"toUserId"`           // ID del destinatario (tabla User)
+	Content    string    `json:"content"`            // Contenido del mensaje
+	CreatedAt  time.Time `json:"createdAt"`          // Timestamp de creación del mensaje (UTC)
+	StatusID   int       `json:"statusId,omitempty"` // ID del estado del mensaje (ej. 1:sent, 2:delivered, 3:read) (tabla MessageStatus)
+	// Otros campos como ClientTempID, ReplyToMessageID, etc. pueden ser añadidos.
+}
+
+// MessageStatus representa un estado de mensaje en la tabla MessageStatus.
+type MessageStatus struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"` // e.g., "sent", "delivered_to_server", "delivered_to_recipient_device", "read_by_recipient"
+}

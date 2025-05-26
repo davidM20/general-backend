@@ -19,12 +19,61 @@ const (
 	MessageTypeClientAck      MessageType = "client_ack"      // Cliente confirma recepción/procesamiento de un mensaje del servidor
 	MessageTypeGenericRequest MessageType = "generic_request" // Solicitud genérica del cliente que espera una respuesta con el mismo PID
 
+	// --- Chat --- Client -> Server
+	MessageTypeGetChatList        MessageType = "get_chat_list"
+	MessageTypeSendChatMessage    MessageType = "send_chat_message"
+	MessageTypeMessagesRead       MessageType = "messages_read"        // Cliente notifica que ha leído mensajes en un chat
+	MessageTypeTypingIndicatorOn  MessageType = "typing_indicator_on"  // Usuario comenzó a escribir
+	MessageTypeTypingIndicatorOff MessageType = "typing_indicator_off" // Usuario dejó de escribir
+
+	// --- Perfil --- Client -> Server
+	MessageTypeGetMyProfile    MessageType = "get_my_profile"
+	MessageTypeUpdateMyProfile MessageType = "update_my_profile"
+	MessageTypeGetUserProfile  MessageType = "get_user_profile"
+	// Para añadir/editar/eliminar items del perfil (educación, experiencia, etc.)
+	// Se podría usar un tipo genérico o tipos específicos.
+	MessageTypeUpdateProfileSection MessageType = "update_profile_section"
+
+	// --- Notificaciones --- Client -> Server
+	MessageTypeGetNotifications     MessageType = "get_notifications"
+	MessageTypeMarkNotificationRead MessageType = "mark_notification_read"
+
+	// --- Contactos y Búsqueda --- Client -> Server
+	MessageTypeSearchUsers           MessageType = "search_users"
+	MessageTypeSearchEnterprises     MessageType = "search_enterprises"
+	MessageTypeSendContactRequest    MessageType = "send_contact_request"
+	MessageTypeRespondContactRequest MessageType = "respond_contact_request"
+
 	// Tipos de mensajes Servidor -> Cliente
 	MessageTypeDataEvent         MessageType = "data_event"         // Un nuevo evento de datos para entregar al cliente
 	MessageTypePresenceEvent     MessageType = "presence_event"     // Notificación de cambio de presencia de otro usuario
 	MessageTypeServerAck         MessageType = "server_ack"         // Servidor confirma recepción/procesamiento de un mensaje del cliente
 	MessageTypeGenericResponse   MessageType = "generic_response"   // Respuesta del servidor a una GenericRequest
 	MessageTypeErrorNotification MessageType = "error_notification" // Notificación de error (ej. fallo al procesar un mensaje previo)
+
+	// --- Chat --- Server -> Client
+	MessageTypeChatList             MessageType = "chat_list"
+	MessageTypeNewChatMessage       MessageType = "new_chat_message"
+	MessageTypeMessageStatusUpdated MessageType = "message_status_updated" // Ej: delivered_to_recipient, read_by_recipient
+	MessageTypeTypingEvent          MessageType = "typing_event"           // Evento de "está escribiendo"
+
+	// --- Perfil --- Server -> Client
+	MessageTypeMyProfileData         MessageType = "my_profile_data"
+	MessageTypeUserProfileData       MessageType = "user_profile_data"
+	MessageTypeProfileUpdateResult   MessageType = "profile_update_result"
+	MessageTypeProfileSectionUpdated MessageType = "profile_section_updated"
+
+	// --- Notificaciones --- Server -> Client
+	MessageTypeNotificationList MessageType = "notification_list"
+	MessageTypeNewNotification  MessageType = "new_notification"
+	MessageTypeNotificationRead MessageType = "notification_read"
+
+	// --- Contactos y Búsqueda --- Server -> Client
+	MessageTypeSearchResultsUsers       MessageType = "search_results_users"
+	MessageTypeSearchResultsEnterprises MessageType = "search_results_enterprises"
+	MessageTypeContactRequestReceived   MessageType = "contact_request_received"
+	MessageTypeContactRequestResponded  MessageType = "contact_request_responded"
+	MessageTypeContactStatusChanged     MessageType = "contact_status_changed" // Ej: amigo añadido, eliminado
 )
 
 // ClientToServerMessage es la estructura para mensajes enviados por el cliente al servidor.

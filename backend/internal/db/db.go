@@ -303,13 +303,15 @@ func createTables(tx *sql.Tx) error {
     CREATE TABLE IF NOT EXISTS Event (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
         Description VARCHAR(255),
-        UserId BIGINT, -- User receiving the notification
-        OtherUserId BIGINT, -- User causing the event
+        EventType VARCHAR(100),
+        EventTitle VARCHAR(255),
+        UserId BIGINT,
+        OtherUserId BIGINT,
         ProyectId BIGINT,
-        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Changed DATE to TIMESTAMP
+        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE,
-        FOREIGN KEY (OtherUserId) REFERENCES User(Id) ON DELETE SET NULL, -- Keep event if other user deleted
-        FOREIGN KEY (ProyectId) REFERENCES Project(Id) ON DELETE SET NULL -- Keep event if project deleted
+        FOREIGN KEY (OtherUserId) REFERENCES User(Id) ON DELETE SET NULL,
+        FOREIGN KEY (ProyectId) REFERENCES Project(Id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS Enterprise (
