@@ -45,6 +45,22 @@ func HandleGetChatList(conn *customws.Connection[wsmodels.WsUserData], msg types
 		return err
 	}
 
+	// Enviar ACK al cliente confirmando que el request fue procesado exitosamente
+	if msg.PID != "" {
+		ackPayload := types.AckPayload{
+			AcknowledgedPID: msg.PID,
+			Status:          "chat_list_sent",
+		}
+		ackMsg := types.ServerToClientMessage{
+			PID:     conn.Manager().Callbacks().GeneratePID(),
+			Type:    types.MessageTypeServerAck,
+			Payload: ackPayload,
+		}
+		if err := conn.SendMessage(ackMsg); err != nil {
+			logger.Warnf("HANDLER_CHAT", "Error enviando ServerAck para GetChatList a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
+		}
+	}
+
 	logger.Successf("HANDLER_CHAT", "Chat list enviada a user %d. PID respuesta: %s", conn.ID, responseMsg.PID)
 	return nil
 }
@@ -128,8 +144,108 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 
 	// 4. El servicio ProcessAndSaveChatMessage ya se encargó de enviar el mensaje al destinatario.
 
-	logger.Successf("HANDLER_CHAT", "Mensaje de chat de UserID %d a %d procesado. MsgDB ID: %s", conn.ID, targetUserID, savedMessage.ID)
+	logger.Successf("HANDLER_CHAT", "Mensaje de chat de UserID %d a %d procesado. MsgDB ID: %s", conn.ID, targetUserID, savedMessage.Id)
 	return nil
 }
 
 // TODO: Implementar HandleMessagesRead, HandleTypingIndicatorOn, HandleTypingIndicatorOff
+
+// HandleDataRequest maneja solicitudes de datos genéricas y las redirecciona a los handlers específicos
+func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
+	logger.Infof("HANDLER_DATA", "Data request recibida de UserID %d. PID: %s", conn.ID, msg.PID)
+
+	// Decodificar el payload como un mapa genérico
+	type DataRequestPayload struct {
+		Action   string                 `json:"action"`
+		Resource string                 `json:"resource"`
+		Data     map[string]interface{} `json:"data,omitempty"`
+	}
+
+	var dataPayload DataRequestPayload
+	payloadBytes, err := json.Marshal(msg.Payload)
+	if err != nil {
+		conn.SendErrorNotification(msg.PID, 400, "Error decodificando payload (marshal): "+err.Error())
+		return errors.New("error marshalling data_request payload: " + err.Error())
+	}
+	if err := json.Unmarshal(payloadBytes, &dataPayload); err != nil {
+		conn.SendErrorNotification(msg.PID, 400, "Error decodificando payload (unmarshal): "+err.Error())
+		return errors.New("error unmarshalling data_request payload: " + err.Error())
+	}
+
+	logger.Debugf("HANDLER_DATA", "Procesando data_request: action='%s', resource='%s'", dataPayload.Action, dataPayload.Resource)
+
+	// Redireccionar basado en action y resource
+	switch dataPayload.Action {
+	case "ping":
+		// Manejar ping del cliente - no necesita respuesta específica, solo ACK
+		logger.Debugf("HANDLER_DATA", "Ping recibido de UserID %d", conn.ID)
+
+		// Enviar ACK confirmando el ping
+		if msg.PID != "" {
+			ackPayload := types.AckPayload{
+				AcknowledgedPID: msg.PID,
+				Status:          "pong",
+			}
+			ackMsg := types.ServerToClientMessage{
+				PID:     conn.Manager().Callbacks().GeneratePID(),
+				Type:    types.MessageTypeServerAck,
+				Payload: ackPayload,
+			}
+			if err := conn.SendMessage(ackMsg); err != nil {
+				logger.Warnf("HANDLER_DATA", "Error enviando pong a UserID %d: %v", conn.ID, err)
+			} else {
+				logger.Debugf("HANDLER_DATA", "Pong enviado a UserID %d", conn.ID)
+			}
+		}
+		return nil
+
+	case "get_list":
+		switch dataPayload.Resource {
+		case "chat":
+			// Redireccionar a HandleGetChatList
+			return HandleGetChatList(conn, msg)
+		case "notification":
+			// Crear payload específico para HandleGetNotifications
+			notifMsg := msg
+			notifMsg.Payload = dataPayload.Data // Usar solo la parte "data" del payload
+			return HandleGetNotifications(conn, notifMsg)
+		default:
+			errorMsg := "Recurso no soportado para get_list: " + dataPayload.Resource
+			conn.SendErrorNotification(msg.PID, 400, errorMsg)
+			return errors.New(errorMsg)
+		}
+
+	case "get_pending":
+		switch dataPayload.Resource {
+		case "notification":
+			// Crear payload específico para HandleGetNotifications con onlyUnread=true
+			notifMsg := msg
+			if dataPayload.Data == nil {
+				dataPayload.Data = make(map[string]interface{})
+			}
+			dataPayload.Data["onlyUnread"] = true // Para get_pending, solo notificaciones no leídas
+			notifMsg.Payload = dataPayload.Data
+			return HandleGetNotifications(conn, notifMsg)
+		default:
+			errorMsg := "Recurso no soportado para get_pending: " + dataPayload.Resource
+			conn.SendErrorNotification(msg.PID, 400, errorMsg)
+			return errors.New(errorMsg)
+		}
+
+	case "send_message":
+		switch dataPayload.Resource {
+		case "chat":
+			// Para chat, el payload ya está en el formato correcto
+			return HandleSendChatMessage(conn, msg)
+		default:
+			errorMsg := "Recurso no soportado para send_message: " + dataPayload.Resource
+			conn.SendErrorNotification(msg.PID, 400, errorMsg)
+			return errors.New(errorMsg)
+		}
+
+	default:
+		errorMsg := "Acción no soportada: " + dataPayload.Action
+		conn.SendErrorNotification(msg.PID, 400, errorMsg)
+		return errors.New(errorMsg)
+	}
+}

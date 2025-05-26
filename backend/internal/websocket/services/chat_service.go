@@ -5,7 +5,6 @@ import (
 	// "encoding/json" // No se usa directamente aquí por ahora
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models" // Alias para el paquete que contiene ChatInfo
@@ -55,10 +54,14 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 			continue // Por ahora, saltamos este chat si no podemos obtener info del otro usuario
 		}
 
-		lastMsg, err := queries.GetLastChatMessageBetweenUsers(chatDB, userID, otherUserID)
+		lastMsg, err := queries.GetLastMessageBetweenUsers(chatDB, userID, otherUserID)
 		if err != nil {
 			logger.Warnf("SERVICE_CHAT", "Error obteniendo último mensaje entre %d y %d: %v", userID, otherUserID, err)
-			// No es un error fatal, el chat puede no tener mensajes
+		}
+
+		var lastMessageText string
+		if lastMsg != nil {
+			lastMessageText = lastMsg.Text
 		}
 
 		unreadCount, err := queries.GetUnreadMessageCount(chatDB, userID, otherUserID) // Mensajes de otherUserID para userID
@@ -80,9 +83,8 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 			UnreadCount:    unreadCount,
 		}
 
-		if lastMsg != nil {
-			chatInfo.LastMessage = lastMsg.Content
-			chatInfo.LastMessageTs = lastMsg.CreatedAt.UnixMilli()
+		if lastMessageText != "" {
+			chatInfo.LastMessage = lastMessageText
 		}
 
 		chatList = append(chatList, chatInfo)
@@ -93,84 +95,46 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 }
 
 // ProcessAndSaveChatMessage procesa un mensaje de chat entrante, lo guarda en la BD,
-// y lo reenvía al destinatario si está conectado.
-func ProcessAndSaveChatMessage(fromUserID, toUserID int64, text string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*models.ChatMessage, error) {
+// y envía el mensaje a destinatarios.
+func ProcessAndSaveChatMessage(fromUserID, toUserID int64, text string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*models.Message, error) {
+	logger.Infof("SERVICE_CHAT", "Procesando mensaje de chat de UserID %d a UserID %d", fromUserID, toUserID)
+
+	// Usar la variable global chatDB que ya está inicializada
 	if chatDB == nil {
 		return nil, errors.New("chat service no inicializado con conexión a BD")
 	}
-	logger.Infof("SERVICE_CHAT", "Procesando mensaje de UserID %d para UserID %d.", fromUserID, toUserID)
 
-	// Determinar el ChatID. Podría basarse en los IDs de los usuarios o recuperarse de la tabla Contact.
-	// Por ahora, crearemos un ChatID simple si no existe un contacto directo con ChatID.
-	// Idealmente, `GetAcceptedContacts` o una función similar proporcionaría el ChatID para una pareja.
-	// Vamos a intentar obtener el contacto para usar su ChatID.
-	// Esto es una simplificación; la gestión de ChatID puede ser más compleja.
-	var chatID string
-	contacts, err := queries.GetAcceptedContacts(chatDB, fromUserID) // Podríamos filtrar para encontrar el específico con toUserID
-	if err == nil {
-		for _, c := range contacts {
-			if (c.User1Id == fromUserID && c.User2Id == toUserID) || (c.User1Id == toUserID && c.User2Id == fromUserID) {
-				chatID = c.ChatId
-				break
-			}
-		}
-	}
-	if chatID == "" {
-		// Si no se encuentra un ChatID de contacto, se podría generar uno o manejarlo como un error,
-		// dependiendo de la lógica de la aplicación. Para el ejemplo, se dejará vacío, pero
-		// la BD podría requerirlo si ChatMessage.ChatID es FK a Contact.ChatId y no es nullable.
-		// El DDL muestra ChatMessage.ChatId VARCHAR(255) y Contact.ChatId VARCHAR(255) UNIQUE.
-		// Y ChatMessage.ChatId FK a Contact.ChatId.
-		// Por lo tanto, un ChatID válido de un Contacto existente es necesario.
-		logger.Errorf("SERVICE_CHAT", "No se encontró ChatID para la conversación entre %d y %d.", fromUserID, toUserID)
-		return nil, fmt.Errorf("no se pudo determinar el ChatID para la conversación entre %d y %d. Asegúrese de que sean contactos.", fromUserID, toUserID)
+	// Comprobar que ambos usuarios están en contactos aceptados
+	// No lo verificamos por ahora, asumimos que la aplicación frontend solo permite esto para contactos válidos.
+
+	// Nota: Si es requerido verificar que fromUserID y toUserID tienen un Contact.Status = 'accepted' entre ellos,
+	// la BD podría requerirlo si ChatMessage.ChatID es FK a Contact.ChatId y no es nullable.
+	// El DDL muestra ChatMessage.ChatId VARCHAR(255) y Contact.ChatId VARCHAR(255) UNIQUE.
+	// Y ChatMessage.ChatId FK a Contact.ChatId.
+
+	// Crear el mensaje usando la nueva función
+	msg, err := queries.CreateMessageFromChatParams(chatDB, fromUserID, toUserID, text)
+	if err != nil {
+		return nil, fmt.Errorf("error creando mensaje en BD: %w", err)
 	}
 
-	chatMsg := models.ChatMessage{
-		// ID se establecerá después de la inserción si es AUTO_INCREMENT, o ya está (UUID).
-		ChatID:     chatID,
-		FromUserID: fromUserID,
-		ToUserID:   toUserID,
-		Content:    text,
-		CreatedAt:  time.Now().UTC(),
-		StatusID:   1,
-	}
+	logger.Successf("SERVICE_CHAT", "Mensaje guardado en BD con ID: %s", msg.Id)
 
-	if err := queries.CreateChatMessage(chatDB, &chatMsg); err != nil {
-		logger.Errorf("SERVICE_CHAT", "Error guardando mensaje en BD de %d a %d: %v", fromUserID, toUserID, err)
-		return nil, err
-	}
-
-	logger.Successf("SERVICE_CHAT", "Mensaje de %d a %d guardado en BD. ID: %d, ChatID: %s", fromUserID, toUserID, chatMsg.ID, chatMsg.ChatID)
-
-	fromUserConn, fromUserExists := manager.GetConnection(fromUserID)
-	var fromUsername = "UsuarioDesconocido"
-	if fromUserExists {
-		fromUsername = fromUserConn.UserData.Username
-	} else {
-		// Como fallback, intentar cargar desde BD si el usuario no está conectado (ej. para notificaciones push futuras)
-		userInfo, dbErr := queries.GetUserBaseInfo(chatDB, fromUserID)
-		if dbErr == nil && userInfo != nil {
-			fromUsername = userInfo.UserName
-		} else {
-			logger.Warnf("SERVICE_CHAT", "No se pudo obtener el nombre de usuario del remitente (ID: %d) desde la conexión WS activa ni BD. Error BD: %v", fromUserID, dbErr)
-		}
-	}
-
-	messageToRecipientPayload := map[string]interface{}{
-		"id":           fmt.Sprintf("%d", chatMsg.ID), // ChatMessage.ID
-		"chatId":       chatMsg.ChatID,
-		"fromUserId":   fromUserID,
-		"fromUsername": fromUsername,
-		"toUserId":     toUserID,
-		"text":         text,
-		"timestamp":    chatMsg.CreatedAt.UnixMilli(),
+	// Crear payload para websocket (compatible con formato anterior)
+	payload := map[string]interface{}{
+		"id":         msg.Id,
+		"chatId":     msg.ChatId,
+		"fromUserId": msg.UserId,
+		"toUserId":   toUserID, // Nota: esto se deduce del ChatId pero lo agregamos por compatibilidad
+		"content":    msg.Text,
+		"createdAt":  msg.Date,
+		"statusId":   msg.StatusMessage,
 	}
 
 	serverMessage := types.ServerToClientMessage{
 		PID:     manager.Callbacks().GeneratePID(),
 		Type:    types.MessageTypeNewChatMessage,
-		Payload: messageToRecipientPayload,
+		Payload: payload,
 	}
 
 	if manager.IsUserOnline(toUserID) {
@@ -178,14 +142,14 @@ func ProcessAndSaveChatMessage(fromUserID, toUserID int64, text string, manager 
 		if errSend != nil {                                           // Comprobar si hay un error, no un mapa de errores
 			logger.Warnf("SERVICE_CHAT", "Error enviando mensaje a UserID %d: %v", toUserID, errSend)
 		}
-		logger.Infof("SERVICE_CHAT", "Mensaje (ID: %d) enviado a UserID %d (online)", chatMsg.ID, toUserID)
+		logger.Infof("SERVICE_CHAT", "Mensaje (ID: %s) enviado a UserID %d (online)", msg.Id, toUserID)
 		// TODO: Actualizar estado a "delivered_to_recipient_device" (StatusID = 2)
 	} else {
-		logger.Infof("SERVICE_CHAT", "Usuario %d no está online. Mensaje (ID: %d) guardado.", toUserID, chatMsg.ID)
+		logger.Infof("SERVICE_CHAT", "Usuario %d no está online. Mensaje (ID: %s) guardado.", toUserID, msg.Id)
 		// TODO: Implementar notificación push si el usuario está offline
 	}
 
-	return &chatMsg, nil
+	return msg, nil
 }
 
 // TODO: Implementar GetMessagesForChat, MarkMessagesAsRead, SetUserTypingStatus

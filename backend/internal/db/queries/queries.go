@@ -7,105 +7,147 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
+	"github.com/google/uuid"
 )
 
 // GetUserBySessionToken busca un usuario basado en un token de sesión.
-// Esta es una implementación de marcador de posición.
-// Deberás reemplazar esto con tu lógica real de consulta a la base de datos.
 func GetUserBySessionToken(db *sql.DB, token string) (*models.User, error) {
-	// TODO: Implementar la lógica real para validar el token de sesión
-	// y recuperar la información del usuario.
-	// Esto típicamente implicaría:
-	// 1. Consultar la tabla 'Session' para encontrar una sesión activa con ese token.
-	// 2. Verificar que la sesión no haya expirado.
-	// 3. Obtener el UserID de la sesión.
-	// 4. Consultar la tabla 'User' para obtener los detalles del usuario.
+	// Paso 1: Buscar sesión activa por token
+	var userId int64
+	var roleId int
+	err := db.QueryRow(`
+		SELECT UserId, RoleId 
+		FROM Session 
+		WHERE Tk = ? 
+		LIMIT 1
+	`, token).Scan(&userId, &roleId)
 
-	// Implementación de marcador de posición:
-	if token == "valid-token-for-user-1" {
-		return &models.User{
-			Id:       1,
-			UserName: "UserOne",
-			// Rellena otros campos necesarios si es preciso
-		}, nil
-	} else if token == "valid-token-for-user-2" {
-		return &models.User{
-			Id:       2,
-			UserName: "UserTwo",
-		}, nil
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, sql.ErrNoRows // Token no encontrado
+		}
+		return nil, fmt.Errorf("error querying session: %w", err)
 	}
 
-	return nil, sql.ErrNoRows // Simula token no encontrado o inválido
-}
-
-// CreateChatMessage inserta un nuevo mensaje de chat en la base de datos.
-// Actualiza el ID y CreatedAt del struct msg pasado por referencia con los valores de la BD.
-func CreateChatMessage(db *sql.DB, msg *models.ChatMessage) error {
-	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = time.Now().UTC()
-	}
-
-	// query := `INSERT INTO "ChatMessage" ("FromUserID", "ToUserID", "Content", "CreatedAt", "StatusID", "ChatID")
-	//           VALUES (?, ?, ?, ?, ?, ?) RETURNING "ID", "CreatedAt"` // MySQL no soporta RETURNING directamente en INSERT.
-	// Se necesita un enfoque diferente o quitar RETURNING si no es esencial para esta función.
-	// Asumiremos por ahora que es para PostgreSQL y lo ajustaremos si es necesario.
-	// Confirmado: Es MySQL. RETURNING no es soportado. Se necesita obtener el ID de otra manera.
-
-	// Para MySQL, primero se inserta y luego se puede obtener el LastInsertId si la PK es AUTO_INCREMENT.
-	// Si el ID es un UUID generado por la aplicación, no se necesita RETURNING.
-	// El esquema de ChatMessage no especifica AUTO_INCREMENT para ID, por lo que asumimos que se genera antes o es un UUID.
-	// "CreatedAt" tampoco puede ser devuelto así en MySQL.
-	// Simplificaremos: no devolveremos nada y asumiremos que msg.ID ya está asignado (ej. UUID) y CreatedAt es el que se fijó.
-
-	queryMySQL := `INSERT INTO "ChatMessage" ("FromUserID", "ToUserID", "Content", "CreatedAt", "StatusID", "ChatID")
-	               VALUES (?, ?, ?, ?, ?, ?)`
-
-	var chatID sql.NullString
-	if msg.ChatID != "" {
-		chatID = sql.NullString{String: msg.ChatID, Valid: true}
-	} else {
-		chatID = sql.NullString{Valid: false}
-	}
-
-	result, err := db.Exec(queryMySQL,
-		msg.FromUserID,
-		msg.ToUserID,
-		msg.Content,
-		msg.CreatedAt, // Este es el valor que se insertará
-		msg.StatusID,
-		chatID,
+	// Paso 2: Obtener datos del usuario
+	var user models.User
+	err = db.QueryRow(`
+		SELECT 
+			Id, FirstName, LastName, UserName, Email, Phone, Sex, DocId,
+			NationalityId, Birthdate, Picture, DegreeId, UniversityId,
+			RoleId, StatusAuthorizedId, Summary, Address, Github, Linkedin
+		FROM User 
+		WHERE Id = ? AND StatusAuthorizedId = 1
+		LIMIT 1
+	`, userId).Scan(
+		&user.Id, &user.FirstName, &user.LastName, &user.UserName, &user.Email, &user.Phone, &user.Sex, &user.DocId,
+		&user.NationalityId, &user.Birthdate, &user.Picture, &user.DegreeId, &user.UniversityId,
+		&user.RoleId, &user.StatusAuthorizedId, &user.Summary, &user.Address, &user.Github, &user.Linkedin,
 	)
 
 	if err != nil {
-		return fmt.Errorf("error insertando chat message: %w", err)
+		if err == sql.ErrNoRows {
+			return nil, sql.ErrNoRows // Usuario no encontrado o inactivo
+		}
+		return nil, fmt.Errorf("error querying user: %w", err)
 	}
 
-	// Si ChatMessage.ID es AUTO_INCREMENT, podemos obtenerlo así:
-	id, err := result.LastInsertId()
+	return &user, nil
+}
+
+// CreateMessage inserta un nuevo mensaje en la tabla Message.
+// Actualiza el ID del struct msg pasado por referencia con el UUID generado.
+func CreateMessage(db *sql.DB, msg *models.Message) error {
+	// Generar UUID para el ID del mensaje
+	msg.Id = uuid.New().String()
+
+	if msg.Date.IsZero() {
+		msg.Date = time.Now().UTC()
+	}
+
+	// Si no se especifica TypeMessageId, usar 1 (tipo texto por defecto)
+	if msg.TypeMessageId == 0 {
+		msg.TypeMessageId = 1 // Asumiendo que 1 es el tipo "texto" por defecto
+	}
+
+	// Si no se especifica StatusMessage, usar 1 (enviado)
+	if msg.StatusMessage == 0 {
+		msg.StatusMessage = 1
+	}
+
+	queryMySQL := `INSERT INTO Message (Id, TypeMessageId, Text, MediaId, Date, StatusMessage, UserId, ChatId, ChatIdGroup, ResponseTo)
+	               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Exec(queryMySQL,
+		msg.Id,
+		msg.TypeMessageId,
+		msg.Text,
+		nil, // MediaId (NULL para mensajes de texto)
+		msg.Date,
+		msg.StatusMessage,
+		msg.UserId,
+		msg.ChatId,
+		nil, // ChatIdGroup (NULL para chats individuales)
+		nil, // ResponseTo (NULL por defecto)
+	)
+
 	if err != nil {
-		// Esto podría fallar si la tabla no tiene AUTO_INCREMENT o el driver no lo soporta bien.
-		// O si el ID no es int64.
-		// Dado que el esquema de Message (que es similar a ChatMessage) usa VARCHAR para ID (UUID),
-		// es probable que ChatMessage.ID tampoco sea AUTO_INCREMENT.
-		// En ese caso, msg.ID debe ser establecido por la aplicación ANTES de llamar a esta función.
-		// Por ahora, asumiremos que si hay un error aquí, es porque no es AUTO_INCREMENT y msg.ID ya está bien.
-		// Considerar registrar una advertencia si LastInsertId falla y se esperaba.
-	} else {
-		msg.ID = id // Actualizar el ID del mensaje si es AUTO_INCREMENT
+		return fmt.Errorf("error insertando mensaje: %w", err)
 	}
-
-	// msg.CreatedAt ya está establecido al valor que se intentó insertar.
-	// Si la BD tiene un DEFAULT CURRENT_TIMESTAMP y se quiere el valor de la BD,
-	// se necesitaría otra consulta SELECT después del INSERT.
 
 	return nil
 }
 
+// CreateMessageFromChatParams crea un mensaje usando parámetros de chat (fromUserID, toUserID, content)
+func CreateMessageFromChatParams(db *sql.DB, fromUserID, toUserID int64, content string) (*models.Message, error) {
+	// Buscar el ChatId basado en los usuarios
+	chatId, err := getChatIdBetweenUsers(db, fromUserID, toUserID)
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo ChatId: %w", err)
+	}
+
+	// Crear el mensaje
+	msg := &models.Message{
+		Text:          content,
+		UserId:        fromUserID,
+		ChatId:        chatId,
+		Date:          time.Now().UTC(),
+		TypeMessageId: 1, // Tipo texto por defecto
+		StatusMessage: 1, // Enviado
+	}
+
+	err = CreateMessage(db, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return msg, nil
+}
+
+// getChatIdBetweenUsers busca o establece el ChatId entre dos usuarios
+func getChatIdBetweenUsers(db *sql.DB, userID1, userID2 int64) (string, error) {
+	var chatId string
+	query := `SELECT ChatId FROM Contact 
+	          WHERE (User1Id = ? AND User2Id = ?) OR (User1Id = ? AND User2Id = ?) 
+	          AND Status = 'accepted' 
+	          LIMIT 1`
+
+	err := db.QueryRow(query, userID1, userID2, userID2, userID1).Scan(&chatId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no existe contacto aceptado entre usuarios %d y %d", userID1, userID2)
+		}
+		return "", fmt.Errorf("error consultando ChatId: %w", err)
+	}
+
+	return chatId, nil
+}
+
 // GetAcceptedContacts recupera todos los contactos aceptados para un userID.
 func GetAcceptedContacts(db *sql.DB, userID int64) ([]models.Contact, error) {
-	query := `SELECT "ContactId", "User1Id", "User2Id", "Status", "ChatId"
-	          FROM "Contact"
-	          WHERE ("User1Id" = ? OR "User2Id" = ?) AND "Status" = 'accepted'`
+	query := `SELECT ContactId, User1Id, User2Id, Status, ChatId
+	          FROM Contact
+	          WHERE (User1Id = ? OR User2Id = ?) AND Status = 'accepted'`
 
 	rows, err := db.Query(query, userID, userID)
 	if err != nil {
@@ -130,7 +172,7 @@ func GetAcceptedContacts(db *sql.DB, userID int64) ([]models.Contact, error) {
 // GetUserBaseInfo recupera información básica del usuario.
 func GetUserBaseInfo(db *sql.DB, userID int64) (*models.UserBaseInfo, error) {
 	user := &models.UserBaseInfo{}
-	query := `SELECT "Id", "FirstName", "LastName", "UserName", "Picture", "RoleId" FROM "User" WHERE "Id" = ?`
+	query := `SELECT Id, FirstName, LastName, UserName, Picture, RoleId FROM User WHERE Id = ?`
 
 	var firstName, lastName, picture sql.NullString
 
@@ -157,25 +199,34 @@ func GetUserBaseInfo(db *sql.DB, userID int64) (*models.UserBaseInfo, error) {
 	return user, nil
 }
 
-// GetLastChatMessageBetweenUsers recupera el último mensaje entre dos usuarios.
-func GetLastChatMessageBetweenUsers(db *sql.DB, userID1 int64, userID2 int64) (*models.ChatMessage, error) {
-	query := `SELECT "ID", "ChatID", "FromUserID", "ToUserID", "Content", "CreatedAt", "StatusID"
-	          FROM "ChatMessage"
-	          WHERE (("FromUserID" = ? AND "ToUserID" = ?) OR ("FromUserID" = ? AND "ToUserID" = ?))
-	          ORDER BY "CreatedAt" DESC
+// GetLastMessageBetweenUsers recupera el último mensaje entre dos usuarios.
+func GetLastMessageBetweenUsers(db *sql.DB, userID1 int64, userID2 int64) (*models.Message, error) {
+	// Primero obtener el ChatId
+	chatId, err := getChatIdBetweenUsers(db, userID1, userID2)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `SELECT Id, TypeMessageId, Text, MediaId, Date, StatusMessage, UserId, ChatId, ChatIdGroup, ResponseTo
+	          FROM Message
+	          WHERE ChatId = ? AND ChatIdGroup IS NULL
+	          ORDER BY Date DESC
 	          LIMIT 1`
 
-	msg := &models.ChatMessage{}
-	var chatID sql.NullString
+	msg := &models.Message{}
+	var mediaId, chatIdGroup, responseTo sql.NullString
 
-	err := db.QueryRow(query, userID1, userID2, userID2, userID1).Scan(
-		&msg.ID,
-		&chatID,
-		&msg.FromUserID,
-		&msg.ToUserID,
-		&msg.Content,
-		&msg.CreatedAt,
-		&msg.StatusID,
+	err = db.QueryRow(query, chatId).Scan(
+		&msg.Id,
+		&msg.TypeMessageId,
+		&msg.Text,
+		&mediaId,
+		&msg.Date,
+		&msg.StatusMessage,
+		&msg.UserId,
+		&msg.ChatId,
+		&chatIdGroup,
+		&responseTo,
 	)
 
 	if err != nil {
@@ -184,24 +235,35 @@ func GetLastChatMessageBetweenUsers(db *sql.DB, userID1 int64, userID2 int64) (*
 		}
 		return nil, fmt.Errorf("error obteniendo el último mensaje entre %d y %d: %w", userID1, userID2, err)
 	}
-	if chatID.Valid {
-		msg.ChatID = chatID.String
+
+	// Asignar valores NULL
+	if mediaId.Valid {
+		msg.MediaId = mediaId.String
+	}
+	if responseTo.Valid {
+		msg.ResponseTo = responseTo.String
 	}
 
 	return msg, nil
 }
 
 // GetUnreadMessageCount cuenta los mensajes no leídos para toUserID de fromUserID.
-// Asume que StatusID = 3 (o cualquier valor que signifique 'leído')
-const ReadStatusID = 3 // Suponiendo que 3 significa "leído"
+// Asume que StatusMessage = 3 (o cualquier valor que signifique 'leído')
+const ReadStatusMessage = 3 // Suponiendo que 3 significa "leído"
 
 func GetUnreadMessageCount(db *sql.DB, toUserID int64, fromUserID int64) (int, error) {
-	query := `SELECT COUNT(*) FROM "ChatMessage"
-	          WHERE "ToUserID" = ? AND "FromUserID" = ? AND "StatusID" < ?`
-	// Contamos mensajes con StatusID < ReadStatusID asumiendo que los estados son 1 (sent), 2 (delivered), 3 (read)
+	// Obtener ChatId
+	chatId, err := getChatIdBetweenUsers(db, fromUserID, toUserID)
+	if err != nil {
+		return 0, err
+	}
+
+	query := `SELECT COUNT(*) FROM Message
+	          WHERE ChatId = ? AND UserId = ? AND StatusMessage < ?`
+	// Contamos mensajes con StatusMessage < ReadStatusMessage
 
 	var count int
-	err := db.QueryRow(query, toUserID, fromUserID, ReadStatusID).Scan(&count)
+	err = db.QueryRow(query, chatId, fromUserID, ReadStatusMessage).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("error contando mensajes no leídos para %d de %d: %w", toUserID, fromUserID, err)
 	}
@@ -218,9 +280,9 @@ func SetUserOnlineStatus(db *sql.DB, userID int64, isOnline bool) error {
 		// Inserta o actualiza el registro del usuario en la tabla "Online".
 		// Se utiliza ON DUPLICATE KEY UPDATE para la operación de "upsert" en MySQL.
 		// El estado se establece en 1 (online) y CreateAt se actualiza.
-		queryMysql := `INSERT INTO "Online" ("UserOnlineId", "CreateAt", "Status")
+		queryMysql := `INSERT INTO Online (UserOnlineId, CreateAt, Status)
 		               VALUES (?, ?, 1)
-		               ON DUPLICATE KEY UPDATE "CreateAt" = VALUES("CreateAt"), "Status" = 1`
+		               ON DUPLICATE KEY UPDATE CreateAt = VALUES(CreateAt), Status = 1`
 		// Nota: VALUES(ColumnName) en la cláusula UPDATE se refiere al valor que se habría insertado.
 		_, err := db.Exec(queryMysql, userID, now)
 		if err != nil {
@@ -228,7 +290,7 @@ func SetUserOnlineStatus(db *sql.DB, userID int64, isOnline bool) error {
 		}
 	} else {
 		// Marcar como offline (Status = 0) y actualizar CreateAt (interpretado como LastSeenAt).
-		queryMysql := `UPDATE "Online" SET "Status" = 0, "CreateAt" = ? WHERE "UserOnlineId" = ?`
+		queryMysql := `UPDATE Online SET Status = 0, CreateAt = ? WHERE UserOnlineId = ?`
 		res, err := db.Exec(queryMysql, now, userID)
 		if err != nil {
 			return fmt.Errorf("error estableciendo estado offline para userID %d: %w", userID, err)
@@ -249,11 +311,11 @@ func GetUserContactIDs(db *sql.DB, userID int64) ([]int64, error) {
 	// Selecciona el ID del otro usuario en el contacto
 	query := `SELECT
 	            CASE
-	                WHEN "User1Id" = ? THEN "User2Id"
-	                ELSE "User1Id"
-	            END AS "OtherUserId"
-	          FROM "Contact"
-	          WHERE ("User1Id" = ? OR "User2Id" = ?) AND "Status" = 'accepted'`
+	                WHEN User1Id = ? THEN User2Id
+	                ELSE User1Id
+	            END AS OtherUserId
+	          FROM Contact
+	          WHERE (User1Id = ? OR User2Id = ?) AND Status = 'accepted'`
 
 	rows, err := db.Query(query, userID, userID, userID)
 	if err != nil {
@@ -283,18 +345,16 @@ func CreateEvent(db *sql.DB, event *models.Event) error {
 	if event.CreateAt.IsZero() {
 		event.CreateAt = time.Now().UTC()
 	}
-	query := `INSERT INTO "Event" ("EventType", "EventTitle", "Description", "UserId", "OtherUserId", "ProyectId", "CreateAt", "IsRead")
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO Event (Description, UserId, OtherUserId, ProyectId, CreateAt, GroupId)
+	          VALUES (?, ?, ?, ?, ?, ?)`
 
 	result, err := db.Exec(query,
-		event.EventType,
-		event.EventTitle,
 		event.Description,
 		event.UserId,
 		event.OtherUserId, // sql.NullInt64 se maneja directamente por el driver
 		event.ProyectId,   // sql.NullInt64 se maneja directamente por el driver
 		event.CreateAt,
-		event.IsRead,
+		nil, // GroupId como NULL por defecto
 	)
 	if err != nil {
 		return fmt.Errorf("error insertando evento: %w", err)
@@ -317,16 +377,19 @@ func CreateEvent(db *sql.DB, event *models.Event) error {
 // Incluye lógica para convertir models.Event a wsmodels.NotificationInfo.
 func GetNotificationsForUser(db *sql.DB, userID int64, onlyUnread bool, limit int, offset int) ([]wsmodels.NotificationInfo, error) {
 	var args []interface{}
-	queryStr := `SELECT "Id", "EventType", "EventTitle", "Description", "UserId", "OtherUserId", "ProyectId", "CreateAt", "IsRead"
-	            FROM "Event"
-	            WHERE "UserId" = ?`
+	queryStr := `SELECT Id, Description, UserId, OtherUserId, ProyectId, CreateAt, GroupId
+	            FROM Event
+	            WHERE UserId = ?`
 	args = append(args, userID)
 
+	// Nota: onlyUnread no se puede aplicar porque la tabla Event no tiene columna IsRead
+	// Por ahora, ignoramos el parámetro onlyUnread y devolvemos todas las notificaciones
 	if onlyUnread {
-		queryStr += ` AND "IsRead" = FALSE` // O `IsRead = 0` si es TINYINT(1) en MySQL. El DDL dice IsRead bool, pero no especifica. En MySQL bool es TINYINT(1)
+		// Ignoramos el filtro por ahora, ya que no existe la columna IsRead
+		// TODO: Agregar columna IsRead a la tabla Event si se necesita
 	}
 
-	queryStr += ` ORDER BY "CreateAt" DESC`
+	queryStr += ` ORDER BY CreateAt DESC`
 
 	if limit > 0 {
 		queryStr += ` LIMIT ?`
@@ -346,16 +409,15 @@ func GetNotificationsForUser(db *sql.DB, userID int64, onlyUnread bool, limit in
 	var notifications []wsmodels.NotificationInfo
 	for rows.Next() {
 		var event models.Event
+		var groupId sql.NullInt64
 		if err := rows.Scan(
 			&event.Id,
-			&event.EventType,
-			&event.EventTitle,
 			&event.Description,
 			&event.UserId,
 			&event.OtherUserId,
 			&event.ProyectId,
 			&event.CreateAt,
-			&event.IsRead,
+			&groupId,
 		); err != nil {
 			return nil, fmt.Errorf("error escaneando evento: %w", err)
 		}
@@ -371,14 +433,17 @@ func GetNotificationsForUser(db *sql.DB, userID int64, onlyUnread bool, limit in
 		if event.ProyectId.Valid {
 			payload["projectId"] = event.ProyectId.Int64
 		}
+		if groupId.Valid {
+			payload["groupId"] = groupId.Int64
+		}
 
 		notifications = append(notifications, wsmodels.NotificationInfo{
 			ID:        fmt.Sprintf("%d", event.Id),
-			Type:      event.EventType,
-			Title:     event.EventTitle,
+			Type:      "general",      // Tipo por defecto ya que no existe EventType
+			Title:     "Notificación", // Título por defecto ya que no existe EventTitle
 			Message:   event.Description,
 			Timestamp: event.CreateAt,
-			IsRead:    event.IsRead,
+			IsRead:    false, // Por defecto false ya que no existe columna IsRead
 			Payload:   payload,
 		})
 	}
@@ -390,35 +455,16 @@ func GetNotificationsForUser(db *sql.DB, userID int64, onlyUnread bool, limit in
 
 // MarkNotificationAsRead marca una notificación específica como leída para un usuario.
 func MarkNotificationAsRead(db *sql.DB, notificationID string, userID int64) error {
-	// Asumimos que notificationID es el event.Id convertido a string.
-	query := `UPDATE "Event" SET "IsRead" = TRUE WHERE "Id" = ? AND "UserId" = ?`
-	// En MySQL, TRUE es 1.
-	result, err := db.Exec(query, notificationID, userID)
-	if err != nil {
-		return fmt.Errorf("error marcando notificación %s como leída para userID %d: %w", notificationID, userID, err)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error obteniendo filas afectadas al marcar notificación %s como leída: %w", notificationID, err)
-	}
-	if rowsAffected == 0 {
-		return fmt.Errorf("notificación %s no encontrada o no pertenece al usuario %d", notificationID, userID)
-	}
-	return nil
+	// NOTA: La tabla Event no tiene columna IsRead, por lo que esta función no hace nada por ahora
+	// TODO: Agregar columna IsRead a la tabla Event si se necesita funcionalidad de marcar como leído
+	return nil // No hacer nada por ahora
 }
 
 // MarkAllNotificationsAsRead marca todas las notificaciones como leídas para un usuario.
 func MarkAllNotificationsAsRead(db *sql.DB, userID int64) (int64, error) {
-	query := `UPDATE "Event" SET "IsRead" = TRUE WHERE "UserId" = ? AND "IsRead" = FALSE`
-	result, err := db.Exec(query, userID)
-	if err != nil {
-		return 0, fmt.Errorf("error marcando todas las notificaciones como leídas para userID %d: %w", userID, err)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("error obteniendo filas afectadas al marcar todas las notificaciones como leídas: %w", err)
-	}
-	return rowsAffected, nil
+	// NOTA: La tabla Event no tiene columna IsRead, por lo que esta función no hace nada por ahora
+	// TODO: Agregar columna IsRead a la tabla Event si se necesita funcionalidad de marcar como leído
+	return 0, nil // No hacer nada por ahora
 }
 
 // --- Perfil de Usuario ---
@@ -433,11 +479,11 @@ func GetUserFullProfileData(db *sql.DB, userID int64) (*models.User, error) {
 	            u.DegreeId, d.DegreeName AS DegreeName, u.UniversityId, un.Name AS UniversityName,
 	            u.RoleId, r.Name AS RoleName, u.StatusAuthorizedId, u.Summary, u.Address, u.Github, u.Linkedin,
 	            u.CreateAt, u.UpdateAt
-	        FROM "User" u
-	        LEFT JOIN "Nationality" n ON u.NationalityId = n.Id
-	        LEFT JOIN "Degree" d ON u.DegreeId = d.Id
-	        LEFT JOIN "University" un ON u.UniversityId = un.Id
-	        LEFT JOIN "Role" r ON u.RoleId = r.Id
+	        FROM User u
+	        LEFT JOIN Nationality n ON u.NationalityId = n.Id
+	        LEFT JOIN Degree d ON u.DegreeId = d.Id
+	        LEFT JOIN University un ON u.UniversityId = un.Id
+	        LEFT JOIN Role r ON u.RoleId = r.Id
 	        WHERE u.Id = ?`
 
 	err := db.QueryRow(query, userID).Scan(
@@ -460,8 +506,8 @@ func GetUserFullProfileData(db *sql.DB, userID int64) (*models.User, error) {
 // GetEducationItemsForUser recupera los items de educación para un usuario.
 func GetEducationItemsForUser(db *sql.DB, personID int64) ([]models.Education, error) {
 	query := `SELECT e.Id, e.PersonId, e.Institution, e.Degree, e.Campus, e.GraduationDate, e.CountryId, n.CountryName AS CountryName
-	          FROM "Education" e
-	          LEFT JOIN "Nationality" n ON e.CountryId = n.Id
+	          FROM Education e
+	          LEFT JOIN Nationality n ON e.CountryId = n.Id
 	          WHERE e.PersonId = ? ORDER BY e.GraduationDate DESC, e.Id DESC`
 	rows, err := db.Query(query, personID)
 	if err != nil {
@@ -485,8 +531,8 @@ func GetEducationItemsForUser(db *sql.DB, personID int64) ([]models.Education, e
 // GetWorkExperienceItemsForUser recupera los items de experiencia laboral para un usuario.
 func GetWorkExperienceItemsForUser(db *sql.DB, personID int64) ([]models.WorkExperience, error) {
 	query := `SELECT w.Id, w.PersonId, w.Company, w.Position, w.StartDate, w.EndDate, w.Description, w.CountryId, n.CountryName AS CountryName
-	          FROM "WorkExperience" w
-	          LEFT JOIN "Nationality" n ON w.CountryId = n.Id
+	          FROM WorkExperience w
+	          LEFT JOIN Nationality n ON w.CountryId = n.Id
 	          WHERE w.PersonId = ? ORDER BY w.EndDate DESC, w.StartDate DESC, w.Id DESC`
 	rows, err := db.Query(query, personID)
 	if err != nil {
@@ -510,7 +556,7 @@ func GetWorkExperienceItemsForUser(db *sql.DB, personID int64) ([]models.WorkExp
 // GetCertificationItemsForUser recupera las certificaciones para un usuario.
 func GetCertificationItemsForUser(db *sql.DB, personID int64) ([]models.Certifications, error) {
 	query := `SELECT Id, PersonId, Certification, Institution, DateObtained
-	          FROM "Certifications" WHERE PersonId = ? ORDER BY DateObtained DESC, Id DESC`
+	          FROM Certifications WHERE PersonId = ? ORDER BY DateObtained DESC, Id DESC`
 	rows, err := db.Query(query, personID)
 	if err != nil {
 		return nil, fmt.Errorf("error consultando certificaciones para PersonID %d: %w", personID, err)
@@ -530,7 +576,7 @@ func GetCertificationItemsForUser(db *sql.DB, personID int64) ([]models.Certific
 
 // GetSkillItemsForUser recupera las habilidades para un usuario.
 func GetSkillItemsForUser(db *sql.DB, personID int64) ([]models.Skills, error) {
-	query := `SELECT Id, PersonId, Skill, Level FROM "Skills" WHERE PersonId = ? ORDER BY Skill ASC, Id DESC`
+	query := `SELECT Id, PersonId, Skill, Level FROM Skills WHERE PersonId = ? ORDER BY Skill ASC, Id DESC`
 	rows, err := db.Query(query, personID)
 	if err != nil {
 		return nil, fmt.Errorf("error consultando skills para PersonID %d: %w", personID, err)
@@ -550,7 +596,7 @@ func GetSkillItemsForUser(db *sql.DB, personID int64) ([]models.Skills, error) {
 
 // GetLanguageItemsForUser recupera los idiomas para un usuario.
 func GetLanguageItemsForUser(db *sql.DB, personID int64) ([]models.Languages, error) {
-	query := `SELECT Id, PersonId, Language, Level FROM "Languages" WHERE PersonId = ? ORDER BY Language ASC, Id DESC`
+	query := `SELECT Id, PersonId, Language, Level FROM Languages WHERE PersonId = ? ORDER BY Language ASC, Id DESC`
 	rows, err := db.Query(query, personID)
 	if err != nil {
 		return nil, fmt.Errorf("error consultando idiomas para PersonID %d: %w", personID, err)
@@ -571,7 +617,7 @@ func GetLanguageItemsForUser(db *sql.DB, personID int64) ([]models.Languages, er
 // GetProjectItemsForUser recupera los proyectos para un usuario.
 func GetProjectItemsForUser(db *sql.DB, personID int64) ([]models.Project, error) {
 	query := `SELECT Id, PersonID, Title, Role, Description, Company, Document, ProjectStatus, StartDate, ExpectedEndDate
-	          FROM "Project" WHERE PersonID = ? ORDER BY StartDate DESC, Id DESC`
+	          FROM Project WHERE PersonID = ? ORDER BY StartDate DESC, Id DESC`
 	rows, err := db.Query(query, personID)
 	if err != nil {
 		return nil, fmt.Errorf("error consultando proyectos para PersonID %d: %w", personID, err)

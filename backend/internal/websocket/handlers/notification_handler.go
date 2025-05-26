@@ -64,6 +64,22 @@ func HandleGetNotifications(conn *customws.Connection[wsmodels.WsUserData], msg 
 		return err
 	}
 
+	// Enviar ACK al cliente confirmando que el request fue procesado exitosamente
+	if msg.PID != "" {
+		ackPayload := types.AckPayload{
+			AcknowledgedPID: msg.PID,
+			Status:          "notification_list_sent",
+		}
+		ackMsg := types.ServerToClientMessage{
+			PID:     conn.Manager().Callbacks().GeneratePID(),
+			Type:    types.MessageTypeServerAck,
+			Payload: ackPayload,
+		}
+		if err := conn.SendMessage(ackMsg); err != nil {
+			logger.Warnf("HANDLER_NOTIFICATION", "Error enviando ServerAck para GetNotifications a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
+		}
+	}
+
 	logger.Successf("HANDLER_NOTIFICATION", "Lista de notificaciones enviada a user %d. PID respuesta: %s", conn.ID, responseMsg.PID)
 	return nil
 }

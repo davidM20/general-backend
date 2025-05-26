@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/admin"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/handlers"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
@@ -11,45 +12,60 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
-// ProcessClientMessage actúa como un enrutador para los mensajes entrantes del cliente.
-// Delega el procesamiento a manejadores específicos basados en msg.Type.
+// ProcessClientMessage enruta los mensajes del cliente a los handlers apropiados
 func ProcessClientMessage(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
-	logger.Debugf("ROUTER", "Mensaje recibido de UserID %d: Tipo '%s', PID '%s'", conn.ID, msg.Type, msg.PID)
+	logger.Debugf("ROUTER", "Mensaje recibido de UserID %d: Tipo '%s', PID '%s'",
+		conn.ID, msg.Type, msg.PID)
+
+	// Registrar métricas
+	collector := admin.GetCollector()
+	if collector != nil {
+		collector.RecordMessage(string(msg.Type))
+	}
+
+	var err error
 
 	switch msg.Type {
+	// --- Solicitud de datos genérica ---
+	case types.MessageTypeDataRequest:
+		err = handlers.HandleDataRequest(conn, msg)
+
 	// --- Chat ---
 	case types.MessageTypeGetChatList:
-		return handlers.HandleGetChatList(conn, msg)
+		err = handlers.HandleGetChatList(conn, msg)
 	case types.MessageTypeSendChatMessage:
-		return handlers.HandleSendChatMessage(conn, msg)
+		err = handlers.HandleSendChatMessage(conn, msg)
 	// case types.MessageTypeMessagesRead:
-	// 	return handlers.HandleMessagesRead(conn, msg)
+	// 	err = handlers.HandleMessagesRead(conn, msg)
 	// case types.MessageTypeTypingIndicatorOn:
-	// 	return handlers.HandleTypingIndicatorOn(conn, msg)
+	// 	err = handlers.HandleTypingIndicatorOn(conn, msg)
 	// case types.MessageTypeTypingIndicatorOff:
-	// 	return handlers.HandleTypingIndicatorOff(conn, msg)
-
-	// --- Perfil ---
-	case types.MessageTypeGetMyProfile:
-		return handlers.HandleGetMyProfile(conn, msg)
-	// case types.MessageTypeUpdateMyProfile:
-	// 	return handlers.HandleUpdateMyProfile(conn, msg)
-	case types.MessageTypeGetUserProfile:
-		return handlers.HandleGetUserProfile(conn, msg)
+	// 	err = handlers.HandleTypingIndicatorOff(conn, msg)
 
 	// --- Notificaciones ---
 	case types.MessageTypeGetNotifications:
-		return handlers.HandleGetNotifications(conn, msg)
+		err = handlers.HandleGetNotifications(conn, msg)
 	case types.MessageTypeMarkNotificationRead:
-		return handlers.HandleMarkNotificationRead(conn, msg)
+		err = handlers.HandleMarkNotificationRead(conn, msg)
+
+	// --- Perfil ---
+	case types.MessageTypeGetMyProfile:
+		err = handlers.HandleGetMyProfile(conn, msg)
+	case types.MessageTypeGetUserProfile:
+		err = handlers.HandleGetUserProfile(conn, msg)
+	// case types.MessageTypeUpdateMyProfile:
+	// 	err = handlers.HandleUpdateMyProfile(conn, msg)
 
 	default:
-		warnMsg := fmt.Sprintf("Tipo de mensaje no soportado recibido de UserID %d: '%s'", conn.ID, msg.Type)
+		warnMsg := fmt.Sprintf("Tipo de mensaje no soportado: '%s'", msg.Type)
 		logger.Warn("ROUTER", warnMsg)
-		// Opcional: enviar un error al cliente si el tipo de mensaje es desconocido y se espera una respuesta
-		// if msg.PID != "" { // Si el cliente espera una respuesta (tiene PID)
-		// 	 conn.SendErrorNotification(msg.PID, 400, "Tipo de mensaje no soportado: "+string(msg.Type))
-		// }
-		return errors.New(warnMsg) // Devolver error para que customws pueda registrarlo si es necesario
+		err = errors.New(warnMsg)
 	}
+
+	// Registrar error si ocurrió
+	if err != nil && collector != nil {
+		collector.RecordError(string(msg.Type) + "_error")
+	}
+
+	return err
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,11 +13,13 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
 	"github.com/davidM20/micro-service-backend-go.git/internal/db"
 	internalWs "github.com/davidM20/micro-service-backend-go.git/internal/websocket"
+	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/admin"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/auth"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/services"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -56,13 +59,13 @@ func main() {
 	services.InitializeNotificationService(dbConn)
 	services.InitializeProfileService(dbConn)
 
-	// Configuración de CustomWS
+	// Configurar el paquete customws
 	wsConfig := types.DefaultConfig()
-	wsConfig.AllowedOrigins = []string{"*"} // Permitir todos los orígenes para desarrollo
+	wsConfig.AllowedOrigins = []string{"*"}
 	wsConfig.WriteWait = 15 * time.Second
 	wsConfig.PongWait = 60 * time.Second
 	wsConfig.PingPeriod = (wsConfig.PongWait * 9) / 10
-	wsConfig.MaxMessageSize = 4096 // 4KB
+	wsConfig.MaxMessageSize = 4096
 	wsConfig.SendChannelBuffer = 256
 	wsConfig.AckTimeout = 10 * time.Second
 	wsConfig.RequestTimeout = 20 * time.Second
@@ -70,7 +73,7 @@ func main() {
 	// Instanciar el authenticator
 	wsAuthenticator := auth.NewAuthenticator(dbConn)
 
-	// Definición de Callbacks para CustomWS
+	// Configurar callbacks
 	callbacks := customws.Callbacks[wsmodels.WsUserData]{
 		AuthenticateAndGetUserData: wsAuthenticator.AuthenticateAndGetUserData,
 		OnConnect: func(conn *customws.Connection[wsmodels.WsUserData]) error {
@@ -89,14 +92,37 @@ func main() {
 		},
 	}
 
+	// Crear el ConnectionManager
 	connManager := customws.NewConnectionManager(wsConfig, callbacks)
 
-	http.HandleFunc("/ws", connManager.ServeHTTP)
+	// Inicializar sistema de administración
+	adminUser := os.Getenv("ADMIN_USERNAME")
+	adminPass := os.Getenv("ADMIN_PASSWORD")
+	if adminUser == "" {
+		adminUser = "admin" // valor por defecto
+	}
+	if adminPass == "" {
+		adminPass = "admin123" // valor por defecto
+	}
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	adminHandler := admin.InitializeAdmin(connManager, dbConn, adminUser, adminPass)
+	logger.Infof("MAIN", "Sistema de administración inicializado - Usuario: %s", adminUser)
+
+	// Configurar rutas HTTP
+	mux := http.NewServeMux()
+
+	// Ruta principal de WebSocket
+	mux.HandleFunc("/ws", connManager.ServeHTTP)
+
+	// Ruta de health check
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("WebSocket Server Healthy"))
+		fmt.Fprintf(w, `{"status":"ok","timestamp":%d}`, time.Now().Unix())
 	})
+
+	// Registrar rutas administrativas
+	adminHandler.RegisterAdminRoutes(mux)
 
 	serverAddr := cfg.WsPort
 	if serverAddr == "" {
@@ -105,6 +131,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         ":" + serverAddr,
+		Handler:      mux,
 		ReadTimeout:  wsConfig.WriteWait + (5 * time.Second), // Un poco más que el WriteWait de WS
 		WriteTimeout: wsConfig.WriteWait + (5 * time.Second),
 		IdleTimeout:  wsConfig.PongWait + (10 * time.Second), // Un poco más que el PongWait

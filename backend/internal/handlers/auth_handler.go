@@ -250,6 +250,25 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Obtener la IP del cliente
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = forwarded
+	} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		clientIP = realIP
+	}
+
+	// Insertar el token en la tabla Session
+	_, err = h.DB.Exec(`
+		INSERT INTO Session (UserId, Tk, Ip, RoleId, TokenId)
+		VALUES (?, ?, ?, ?, ?)
+	`, user.Id, tokenString, clientIP, user.RoleId, 0) // TokenId = 0 por ahora
+	if err != nil {
+		logger.Errorf("LOGIN", "Failed inserting session for UserID %d: %v", user.Id, err)
+		http.Error(w, "Error creating session", http.StatusInternalServerError)
+		return
+	}
+
 	// Nota: La respuesta JSON ahora incluirá los tipos sql.Null*
 	// El frontend podría necesitar manejarlos (ej. verificar campo .Valid antes de usar .String, .Int64, etc.)
 	resp := models.LoginResponse{

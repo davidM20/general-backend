@@ -130,7 +130,6 @@ func NewConnectionManager[TUserData any](cfg types.Config, cbs Callbacks[TUserDa
 				origin := r.Header.Get("Origin")
 				if origin == "" {
 					// Permitir conexiones sin origen (ej. Postman, scripts locales, otros servidores backend)
-					// Esto es una práctica común pero considera las implicaciones de seguridad.
 					logger.Infof(componentLog, "CheckOrigin: Permitiendo conexión sin origen (Origin header vacío).")
 					return true
 				}
@@ -138,7 +137,13 @@ func NewConnectionManager[TUserData any](cfg types.Config, cbs Callbacks[TUserDa
 					logger.Warnf(componentLog, "CheckOrigin: No hay AllowedOrigins configurados. Rechazando origen: %s", origin)
 					return false // Si no hay orígenes permitidos configurados, denegar todos los que tengan un Origin header.
 				}
+
+				// Verificar si "*" está en la lista de orígenes permitidos (wildcard para todos)
 				for _, allowedOrigin := range cfg.AllowedOrigins {
+					if allowedOrigin == "*" {
+						logger.Infof(componentLog, "CheckOrigin: Permitiendo todos los orígenes (wildcard '*' configurado). Origen: %s", origin)
+						return true
+					}
 					if origin == allowedOrigin {
 						logger.Infof(componentLog, "CheckOrigin: Origen permitido: %s", origin)
 						return true

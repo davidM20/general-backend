@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -10,7 +12,6 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
-	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
 	"github.com/koding/websocketproxy"
 )
@@ -25,6 +26,14 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Implementar http.Hijacker para soporte de WebSocket
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, fmt.Errorf("ResponseWriter no implementa http.Hijacker")
 }
 
 // corsMiddleware agrega headers CORS para permitir todo
@@ -86,17 +95,6 @@ func main() {
 	// Crear proxies inversos
 	apiProxy := httputil.NewSingleHostReverseProxy(apiURL)
 	wsProxy := websocketproxy.NewProxy(wsURL)
-
-	// Configurar un Upgrader explícito para el proxy WebSocket
-	proxyUpgrader := &websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			// Durante desarrollo, aceptar cualquier origen
-			return true
-		},
-	}
-	wsProxy.Upgrader = proxyUpgrader
 
 	// Modificar el director del proxy API
 	originalDirectorAPI := apiProxy.Director

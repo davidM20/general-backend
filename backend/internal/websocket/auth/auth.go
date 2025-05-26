@@ -29,20 +29,30 @@ func NewAuthenticator(db *sql.DB) *Authenticator {
 // Valida la petición (ej. token JWT, cookies) y retorna el ID del usuario (int64) y los datos WsUserData.
 // Si la autenticación falla, debe retornar un error y ServeHTTP responderá con HTTP Unauthorized.
 func (a *Authenticator) AuthenticateAndGetUserData(r *http.Request) (userID int64, userData wsmodels.WsUserData, err error) {
-	// Lógica de autenticación de ejemplo:
-	// 1. Extraer token (ej. del header "Authorization: Bearer <token>")
+	var token string
+
+	// Lógica de autenticación mejorada - múltiples métodos:
+	// 1. Extraer token del header "Authorization: Bearer <token>"
 	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		logger.Warn("AUTH", "Intento de conexión WS sin Authorization header")
-		return 0, wsmodels.WsUserData{}, errors.New("authorization header requerido")
+	if authHeader != "" {
+		splitToken := strings.Split(authHeader, "Bearer ")
+		if len(splitToken) == 2 {
+			token = splitToken[1]
+		} else {
+			logger.Warn("AUTH", "Formato de Authorization header inválido")
+		}
 	}
 
-	splitToken := strings.Split(authHeader, "Bearer ")
-	if len(splitToken) != 2 {
-		logger.Warn("AUTH", "Formato de Authorization header inválido")
-		return 0, wsmodels.WsUserData{}, errors.New("formato de token inválido")
+	// 2. Si no hay token en header, intentar parámetro de URL (para WebSocket desde navegador/React Native)
+	if token == "" {
+		token = r.URL.Query().Get("token")
 	}
-	token := splitToken[1]
+
+	// 3. Si aún no hay token, fallar
+	if token == "" {
+		logger.Warn("AUTH", "Intento de conexión WS sin token de autorización (header Authorization o parámetro ?token)")
+		return 0, wsmodels.WsUserData{}, errors.New("token de autorización requerido")
+	}
 
 	// 2. Validar el token
 	// Aquí iría la lógica para validar el token JWT o de sesión.
@@ -64,7 +74,13 @@ func (a *Authenticator) AuthenticateAndGetUserData(r *http.Request) (userID int6
 	// 3. Si el token es válido, obtener UserID y cualquier otro dato necesario para WsUserData.
 	// Por ejemplo, podrías querer cargar el Username aquí si no está en el token.
 	// Supongamos que 'user.Id' y 'user.UserName' vienen de tu estructura 'models.User' recuperada.
-	logger.Infof("AUTH", "Usuario autenticado exitosamente para WS: ID %d, Username %s", user.Id, user.UserName)
+	logger.Infof("AUTH", "Usuario autenticado exitosamente para WS: ID %d, Username %s (método: %s)",
+		user.Id, user.UserName, func() string {
+			if authHeader != "" {
+				return "Authorization header"
+			}
+			return "URL parameter"
+		}())
 	return user.Id, wsmodels.WsUserData{
 		UserID:   user.Id,
 		Username: user.UserName,
