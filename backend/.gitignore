@@ -24,10 +24,7 @@
 
 # Compiled binary
 backend-general # O el nombre que le des al compilar
-api
-websocket
-proxy
-
+/bin
 # Log files
 *.log
 
