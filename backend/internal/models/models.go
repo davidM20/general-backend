@@ -278,8 +278,88 @@ type LoginRequest struct {
 
 // LoginResponse defines the structure for login responses.
 type LoginResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
+	Token string  `json:"token"`
+	User  UserDTO `json:"user"`
+}
+
+// UserDTO defines a clean user structure for API responses without sql.Null types
+type UserDTO struct {
+	Id                 int64     `json:"id"`
+	FirstName          string    `json:"first_name"`
+	LastName           string    `json:"last_name"`
+	UserName           string    `json:"user_name"`
+	Email              string    `json:"email"`
+	Phone              string    `json:"phone,omitempty"`
+	Sex                string    `json:"sex,omitempty"`
+	DocId              string    `json:"doc_id,omitempty"`
+	NationalityId      int       `json:"nationality_id,omitempty"`
+	Birthdate          string    `json:"birthdate,omitempty"` // Format: YYYY-MM-DD
+	Picture            string    `json:"picture,omitempty"`
+	DegreeId           int64     `json:"degree_id,omitempty"`
+	UniversityId       int64     `json:"university_id,omitempty"`
+	RoleId             int       `json:"role_id"`
+	StatusAuthorizedId int       `json:"status_authorized_id"`
+	Summary            string    `json:"summary,omitempty"`
+	Address            string    `json:"address,omitempty"`
+	Github             string    `json:"github,omitempty"`
+	Linkedin           string    `json:"linkedin,omitempty"`
+	CreateAt           time.Time `json:"create_at"`
+	UpdateAt           time.Time `json:"update_at"`
+}
+
+// ToUserDTO converts a User model to a clean UserDTO for API responses
+func (u *User) ToUserDTO() UserDTO {
+	dto := UserDTO{
+		Id:                 u.Id,
+		FirstName:          u.FirstName,
+		LastName:           u.LastName,
+		UserName:           u.UserName,
+		Email:              u.Email,
+		RoleId:             u.RoleId,
+		StatusAuthorizedId: u.StatusAuthorizedId,
+		CreateAt:           u.CreateAt,
+		UpdateAt:           u.UpdateAt,
+	}
+
+	// Handle sql.Null* fields
+	if u.Phone.Valid {
+		dto.Phone = u.Phone.String
+	}
+	if u.Sex.Valid {
+		dto.Sex = u.Sex.String
+	}
+	if u.DocId.Valid {
+		dto.DocId = u.DocId.String
+	}
+	if u.NationalityId.Valid {
+		dto.NationalityId = int(u.NationalityId.Int32)
+	}
+	if u.Birthdate.Valid {
+		dto.Birthdate = u.Birthdate.Time.Format("2006-01-02")
+	}
+	if u.Picture.Valid {
+		dto.Picture = u.Picture.String
+	}
+	if u.DegreeId.Valid {
+		dto.DegreeId = u.DegreeId.Int64
+	}
+	if u.UniversityId.Valid {
+		dto.UniversityId = u.UniversityId.Int64
+	}
+	if u.Summary.Valid {
+		dto.Summary = u.Summary.String
+	}
+	if u.Address.Valid {
+		dto.Address = u.Address.String
+	}
+	if u.Github.Valid {
+		dto.Github = u.Github.String
+	}
+	if u.Linkedin.Valid {
+		dto.Linkedin = u.Linkedin.String
+	}
+
+	return dto
 }
 
 // WebSocketMessage defines the generic structure for incoming WebSocket messages.

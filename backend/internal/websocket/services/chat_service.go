@@ -60,8 +60,12 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 		}
 
 		var lastMessageText string
+		var lastMessageTs int64
+		var lastMessageFromUserId int64
 		if lastMsg != nil {
 			lastMessageText = lastMsg.Text
+			lastMessageTs = lastMsg.Date.UnixMilli()
+			lastMessageFromUserId = lastMsg.UserId
 		}
 
 		unreadCount, err := queries.GetUnreadMessageCount(chatDB, userID, otherUserID) // Mensajes de otherUserID para userID
@@ -85,6 +89,8 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 
 		if lastMessageText != "" {
 			chatInfo.LastMessage = lastMessageText
+			chatInfo.LastMessageTs = lastMessageTs
+			chatInfo.LastMessageFromUserId = lastMessageFromUserId
 		}
 
 		chatList = append(chatList, chatInfo)

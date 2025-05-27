@@ -32,6 +32,9 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 		return nil, err
 	}
 
+	// Usar ToUserDTO() para limpiar los campos sql.Null
+	userDTO := userData.ToUserDTO()
+
 	educationItemsDB, err := queries.GetEducationItemsForUser(profileDB, userID)
 	if err != nil {
 		logger.Warnf("SERVICE_PROFILE", "Error obteniendo items de educación para UserID %d: %v", userID, err)
@@ -63,31 +66,31 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 		logger.Warnf("SERVICE_PROFILE", "Error obteniendo proyectos para UserID %d: %v", userID, err)
 	}
 
-	// Convertir DB models a DTO wsmodels
+	// Usar los datos limpios del UserDTO en lugar de la conversión manual
 	profileDto := &wsmodels.ProfileData{
-		ID:                 userData.Id,
-		FirstName:          userData.FirstName,
-		LastName:           userData.LastName,
-		UserName:           userData.UserName,
-		Email:              userData.Email,
-		Phone:              userData.Phone.String,
-		Sex:                userData.Sex.String,
-		DocId:              userData.DocId.String,
-		NationalityId:      int(userData.NationalityId.Int32), // Asumiendo que NationalityId en User es sql.NullInt32
-		NationalityName:    userData.NationalityName,          // Viene del JOIN en GetUserFullProfileData
-		Birthdate:          formatNullTimeToString(userData.Birthdate, "2006-01-02"),
-		Picture:            userData.Picture.String,
-		DegreeName:         userData.DegreeName,         // Viene del JOIN
-		UniversityName:     userData.UniversityName,     // Viene del JOIN
-		RoleID:             userData.RoleId,             // RoleId en User es int
-		RoleName:           userData.RoleName,           // Viene del JOIN
-		StatusAuthorizedId: userData.StatusAuthorizedId, // StatusAuthorizedId en User es int
-		Summary:            userData.Summary.String,
-		Address:            userData.Address.String,
-		Github:             userData.Github.String,
-		Linkedin:           userData.Linkedin.String,
-		CreatedAt:          userData.CreateAt,
-		UpdatedAt:          userData.UpdateAt,
+		ID:                 userDTO.Id,
+		FirstName:          userDTO.FirstName,
+		LastName:           userDTO.LastName,
+		UserName:           userDTO.UserName,
+		Email:              userDTO.Email,
+		Phone:              userDTO.Phone,
+		Sex:                userDTO.Sex,
+		DocId:              userDTO.DocId,
+		NationalityId:      userDTO.NationalityId,
+		NationalityName:    userData.NationalityName, // Viene del JOIN en GetUserFullProfileData
+		Birthdate:          userDTO.Birthdate,
+		Picture:            userDTO.Picture,
+		DegreeName:         userData.DegreeName,     // Viene del JOIN
+		UniversityName:     userData.UniversityName, // Viene del JOIN
+		RoleID:             userDTO.RoleId,
+		RoleName:           userData.RoleName, // Viene del JOIN
+		StatusAuthorizedId: userDTO.StatusAuthorizedId,
+		Summary:            userDTO.Summary,
+		Address:            userDTO.Address,
+		Github:             userDTO.Github,
+		Linkedin:           userDTO.Linkedin,
+		CreatedAt:          userDTO.CreateAt,
+		UpdatedAt:          userDTO.UpdateAt,
 		Curriculum: wsmodels.CurriculumVitae{
 			Education:      make([]wsmodels.EducationItem, 0),
 			Experience:     make([]wsmodels.WorkExperienceItem, 0),

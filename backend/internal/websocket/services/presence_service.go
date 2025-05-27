@@ -50,8 +50,9 @@ func HandleUserConnect(userID int64, username string, manager *customws.Connecti
 		// Continuar incluso si no podemos notificar a los contactos
 	} else if len(contactUserIDs) > 0 {
 		presenceMsg := types.ServerToClientMessage{
-			PID:  manager.Callbacks().GeneratePID(),
-			Type: types.MessageTypePresenceEvent,
+			PID:        manager.Callbacks().GeneratePID(),
+			Type:       types.MessageTypePresenceEvent,
+			FromUserID: userID,
 			Payload: map[string]interface{}{
 				"eventType": "user_online",
 				"userId":    userID,
@@ -91,8 +92,9 @@ func HandleUserDisconnect(userID int64, username string, manager *customws.Conne
 		logger.Errorf("SERVICE_PRESENCE", "Error obteniendo IDs de contacto para UserID %d al desconectar: %v", userID, err)
 	} else if len(contactUserIDs) > 0 {
 		presenceMsg := types.ServerToClientMessage{
-			PID:  manager.Callbacks().GeneratePID(),
-			Type: types.MessageTypePresenceEvent,
+			PID:        manager.Callbacks().GeneratePID(),
+			Type:       types.MessageTypePresenceEvent,
+			FromUserID: userID,
 			Payload: map[string]interface{}{
 				"eventType": "user_offline",
 				"userId":    userID,

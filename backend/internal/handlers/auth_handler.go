@@ -269,11 +269,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Nota: La respuesta JSON ahora incluirá los tipos sql.Null*
-	// El frontend podría necesitar manejarlos (ej. verificar campo .Valid antes de usar .String, .Int64, etc.)
+	// Nota: Ahora convertimos el User a UserDTO para limpiar los campos sql.Null*
 	resp := models.LoginResponse{
 		Token: tokenString,
-		User:  user,
+		User:  user.ToUserDTO(), // Usar el método ToUserDTO para limpiar la respuesta
 	}
 
 	logger.Successf("LOGIN", "User %s (ID: %d) logged in successfully", req.Email, user.Id)

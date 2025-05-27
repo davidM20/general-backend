@@ -48,7 +48,7 @@ func (h *UserHandler) GetMyProfile(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(user) // Devuelve el usuario (sin contraseña)
+	json.NewEncoder(w).Encode(user.ToUserDTO()) // Usar ToUserDTO para limpiar la respuesta
 }
 
 // TODO: Implementar GetUserProfile (para ver perfiles de otros si es permitido)

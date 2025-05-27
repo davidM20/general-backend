@@ -35,9 +35,10 @@ func HandleGetChatList(conn *customws.Connection[wsmodels.WsUserData], msg types
 	}
 
 	responseMsg := types.ServerToClientMessage{
-		PID:     conn.Manager().Callbacks().GeneratePID(), // Generar nuevo PID para la respuesta del servidor
-		Type:    types.MessageTypeChatList,
-		Payload: chatList,
+		PID:        conn.Manager().Callbacks().GeneratePID(), // Generar nuevo PID para la respuesta del servidor
+		Type:       types.MessageTypeChatList,
+		FromUserID: conn.ID, // Agregar FromUserID para identificar el origen del mensaje
+		Payload:    chatList,
 	}
 
 	if err := conn.SendMessage(responseMsg); err != nil {
@@ -52,9 +53,10 @@ func HandleGetChatList(conn *customws.Connection[wsmodels.WsUserData], msg types
 			Status:          "chat_list_sent",
 		}
 		ackMsg := types.ServerToClientMessage{
-			PID:     conn.Manager().Callbacks().GeneratePID(),
-			Type:    types.MessageTypeServerAck,
-			Payload: ackPayload,
+			PID:        conn.Manager().Callbacks().GeneratePID(),
+			Type:       types.MessageTypeServerAck,
+			FromUserID: conn.ID, // Agregar FromUserID para identificar el origen del ACK
+			Payload:    ackPayload,
 		}
 		if err := conn.SendMessage(ackMsg); err != nil {
 			logger.Warnf("HANDLER_CHAT", "Error enviando ServerAck para GetChatList a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
@@ -133,9 +135,10 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 			// "messageServerId": savedMessage.ID,
 		}
 		ackMsg := types.ServerToClientMessage{
-			PID:     conn.Manager().Callbacks().GeneratePID(),
-			Type:    types.MessageTypeServerAck,
-			Payload: ackPayload,
+			PID:        conn.Manager().Callbacks().GeneratePID(),
+			Type:       types.MessageTypeServerAck,
+			FromUserID: conn.ID, // Agregar FromUserID para identificar el origen del ACK
+			Payload:    ackPayload,
 		}
 		if err := conn.SendMessage(ackMsg); err != nil {
 			logger.Warnf("HANDLER_CHAT", "Error enviando ServerAck por chat msg a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
@@ -187,9 +190,10 @@ func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types
 				Status:          "pong",
 			}
 			ackMsg := types.ServerToClientMessage{
-				PID:     conn.Manager().Callbacks().GeneratePID(),
-				Type:    types.MessageTypeServerAck,
-				Payload: ackPayload,
+				PID:        conn.Manager().Callbacks().GeneratePID(),
+				Type:       types.MessageTypeServerAck,
+				FromUserID: conn.ID, // Agregar FromUserID para identificar el origen del pong
+				Payload:    ackPayload,
 			}
 			if err := conn.SendMessage(ackMsg); err != nil {
 				logger.Warnf("HANDLER_DATA", "Error enviando pong a UserID %d: %v", conn.ID, err)

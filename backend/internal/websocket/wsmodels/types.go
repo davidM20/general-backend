@@ -14,16 +14,17 @@ type WsUserData struct {
 
 // ChatInfo representa la información resumida de un chat para la lista de chats del usuario.
 type ChatInfo struct {
-	ChatID         string `json:"chatId"`                   // Identificador único del chat (puede ser el ID del contacto si es un chat 1-a-1)
-	OtherUserID    int64  `json:"otherUserId"`              // ID del otro usuario en el chat
-	OtherUserName  string `json:"otherUserName"`            // Nombre de usuario del otro participante
-	OtherFirstName string `json:"otherFirstName,omitempty"` // Nombre del otro participante
-	OtherLastName  string `json:"otherLastName,omitempty"`  // Apellido del otro participante
-	OtherPicture   string `json:"otherPicture,omitempty"`   // URL de la imagen de perfil del otro participante
-	LastMessage    string `json:"lastMessage,omitempty"`    // Contenido del último mensaje en el chat
-	LastMessageTs  int64  `json:"lastMessageTs,omitempty"`  // Timestamp Unix (en milisegundos) del último mensaje
-	UnreadCount    int    `json:"unreadCount,omitempty"`    // Número de mensajes no leídos por el usuario actual en este chat
-	IsOtherOnline  bool   `json:"isOnline"`                 // Estado de conexión del otro usuario
+	ChatID                string `json:"chatId"`                          // Identificador único del chat (puede ser el ID del contacto si es un chat 1-a-1)
+	OtherUserID           int64  `json:"otherUserId"`                     // ID del otro usuario en el chat
+	OtherUserName         string `json:"otherUserName"`                   // Nombre de usuario del otro participante
+	OtherFirstName        string `json:"otherFirstName,omitempty"`        // Nombre del otro participante
+	OtherLastName         string `json:"otherLastName,omitempty"`         // Apellido del otro participante
+	OtherPicture          string `json:"otherPicture,omitempty"`          // URL de la imagen de perfil del otro participante
+	LastMessage           string `json:"lastMessage,omitempty"`           // Contenido del último mensaje en el chat
+	LastMessageTs         int64  `json:"lastMessageTs,omitempty"`         // Timestamp Unix (en milisegundos) del último mensaje
+	LastMessageFromUserId int64  `json:"lastMessageFromUserId,omitempty"` // ID del usuario que envió el último mensaje
+	UnreadCount           int    `json:"unreadCount,omitempty"`           // Número de mensajes no leídos por el usuario actual en este chat
+	IsOtherOnline         bool   `json:"isOnline"`                        // Estado de conexión del otro usuario
 }
 
 // NotificationInfo representa una notificación para el usuario.
