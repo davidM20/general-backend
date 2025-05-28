@@ -5,6 +5,7 @@ import (
 	// "encoding/json" // No se usa directamente aquí por ahora
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models" // Alias para el paquete que contiene ChatInfo
@@ -156,6 +157,139 @@ func ProcessAndSaveChatMessage(fromUserID, toUserID int64, text string, manager 
 	}
 
 	return msg, nil
+}
+
+// GetChatHistory recupera el historial de mensajes para un chat específico.
+// Implementa paginación basada en beforeMessageID y limit.
+func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) ([]wsmodels.MessageDB, error) {
+	if chatDB == nil {
+		return nil, errors.New("GetChatHistory: chat service no inicializado con conexión a BD")
+	}
+
+	logger.Infof("SERVICE_CHAT", "Recuperando historial para ChatID: %s, UserID: %d, Limit: %d, BeforeMessageID: %s", chatID, userID, limit, beforeMessageID)
+
+	// Obtener participantes del chat para determinar TargetUserId en cada mensaje
+	contact, err := queries.GetContactByChatID(chatDB, chatID) // Asumiendo que esta función existe o la creas
+	if err != nil {
+		logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s: %v", chatID, err)
+		return nil, fmt.Errorf("error obteniendo datos del chat: %w", err)
+	}
+
+	var args []interface{}
+	query := `SELECT Id, UserId, Text, Date, StatusMessage, TypeMessageId, MediaId FROM Message WHERE ChatId = ?`
+	args = append(args, chatID)
+
+	if beforeMessageID != "" {
+		// Obtener el timestamp y el ID del mensaje ancla para la paginación
+		var anchorDate time.Time
+		var anchorID string // Asumimos que el ID también se usa para desempatar si los timestamps son idénticos
+		// La consulta para el ancla debe ser precisa
+		row := chatDB.QueryRow("SELECT Date, Id FROM Message WHERE Id = ? AND ChatId = ?", beforeMessageID, chatID)
+		err := row.Scan(&anchorDate, &anchorID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				logger.Warnf("SERVICE_CHAT", "beforeMessageID %s no encontrado para ChatID %s", beforeMessageID, chatID)
+				return []wsmodels.MessageDB{}, nil // No hay más mensajes antes de un ID inexistente
+			}
+			logger.Errorf("SERVICE_CHAT", "Error obteniendo mensaje ancla %s: %v", beforeMessageID, err)
+			return nil, fmt.Errorf("error con paginación: %w", err)
+		}
+		// Para orden DESC (más nuevos primero), queremos mensajes "menores que" el ancla
+		// (Date < anchorDate) O (Date == anchorDate AND Id < anchorID)
+		// Si los IDs no son directamente comparables para orden, ajustar esta lógica.
+		// Asumiendo que los IDs son ULIDs o similar, donde una comparación lexicográfica es válida para la secuencia.
+		query += " AND (Date < ? OR (Date = ? AND Id < ?))"
+		args = append(args, anchorDate, anchorDate, anchorID)
+	}
+
+	query += " ORDER BY Date DESC, Id DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := chatDB.Query(query, args...)
+	if err != nil {
+		logger.Errorf("SERVICE_CHAT", "Error consultando historial de mensajes para ChatID %s: %v", chatID, err)
+		return nil, fmt.Errorf("error al obtener mensajes: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []wsmodels.MessageDB
+	for rows.Next() {
+		var dbMsg models.Message // Usamos models.Message para el escaneo inicial
+		var typeMessageIdSc sql.NullInt64
+		var mediaIdSc sql.NullString
+		var textSc sql.NullString // Variable para escanear el campo Text
+		// ResponseTo y ChatIdGroup no están en el SELECT actual, añadir si es necesario.
+
+		// Los campos a escanear deben coincidir con la consulta SELECT actual:
+		// Id, UserId, Text, Date, StatusMessage, TypeMessageId, MediaId
+		err := rows.Scan(
+			&dbMsg.Id,
+			&dbMsg.UserId, // FromUserId
+			&textSc,       // Text (puede ser NULL)
+			&dbMsg.Date,   // Se convertirá a Timestamp string
+			&dbMsg.StatusMessage,
+			&typeMessageIdSc, // TypeMessageId (puede ser NULL)
+			&mediaIdSc,       // MediaId (puede ser NULL)
+		)
+		if err != nil {
+			logger.Errorf("SERVICE_CHAT", "Error escaneando mensaje: %v", err)
+			continue
+		}
+
+		var targetUserID int64
+		if dbMsg.UserId == contact.User1Id {
+			targetUserID = contact.User2Id
+		} else if dbMsg.UserId == contact.User2Id { // Asegurar que User1Id y User2Id sean los correctos del contacto
+			targetUserID = contact.User1Id
+		} else {
+			logger.Warnf("SERVICE_CHAT", "El UserId %d del mensaje no coincide con ninguno de los participantes del ContactID %s", dbMsg.UserId, contact.ContactId)
+			// Decidir cómo manejar esto: ¿Omitir mensaje? ¿Establecer targetUserID a un valor por defecto o error?
+			// Por ahora, lo dejaremos como estaba, pero esto podría ser un problema si los datos son inconsistentes.
+			targetUserID = 0 // O alguna otra lógica de manejo de errores
+		}
+
+		m := wsmodels.MessageDB{
+			Id:           dbMsg.Id,
+			ChatId:       chatID,
+			FromUserId:   dbMsg.UserId,
+			TargetUserId: targetUserID,
+			Text:         textSc.String, // Usar textSc.String, será "" si Text era NULL
+			Timestamp:    dbMsg.Date.UTC().Format(time.RFC3339Nano),
+			Status:       mapStatusMessageToString(dbMsg.StatusMessage),
+		}
+
+		if typeMessageIdSc.Valid {
+			m.TypeMessageId = typeMessageIdSc.Int64
+		}
+		if mediaIdSc.Valid {
+			m.MediaId = mediaIdSc.String
+		}
+
+		messages = append(messages, m)
+	}
+
+	if err = rows.Err(); err != nil {
+		logger.Errorf("SERVICE_CHAT", "Error después de iterar mensajes: %v", err)
+		return nil, fmt.Errorf("error procesando resultados de mensajes: %w", err)
+	}
+
+	logger.Successf("SERVICE_CHAT", "Historial para ChatID %s recuperado. %d mensajes.", chatID, len(messages))
+	return messages, nil
+}
+
+// mapStatusMessageToString convierte el estado int de la BD a una cadena para el cliente.
+func mapStatusMessageToString(statusInt int) string {
+	switch statusInt {
+	case 1: // Asumiendo 1 = Enviado
+		return "sent"
+	case 2: // Asumiendo 2 = Entregado (al dispositivo)
+		return "delivered_device"
+	case 3: // Asumiendo 3 = Leído
+		return "read"
+	default:
+		logger.Warnf("SERVICE_CHAT", "Estado de mensaje desconocido: %d", statusInt)
+		return "unknown"
+	}
 }
 
 // TODO: Implementar GetMessagesForChat, MarkMessagesAsRead, SetUserTypingStatus

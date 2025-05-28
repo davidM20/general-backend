@@ -50,8 +50,14 @@ func HandleGetNotifications(conn *customws.Connection[wsmodels.WsUserData], msg 
 		return err
 	}
 
+	// DEBUG: Loguear las notificaciones recuperadas ANTES de enviarlas
+	for i, notif := range notifications {
+		logger.Debugf("HANDLER_NOTIFICATION", "Notificación %d para UserID %d (antes de enviar): ID=%s, Type=%s, Title=%s, ProfileID=%d, ProfileName=%s, ProfilePic=%s, Payload=%+v",
+			i, conn.ID, notif.ID, notif.Type, notif.Title, notif.Profile.ID, notif.Profile.FirstName+" "+notif.Profile.LastName, notif.Profile.Picture, notif.Payload)
+	}
+
 	responseMsg := types.ServerToClientMessage{
-		PID:     conn.Manager().Callbacks().GeneratePID(), // Usar el PID del cliente si se espera respuesta al mismo PID, o generar nuevo
+		PID:     conn.Manager().Callbacks().GeneratePID(),
 		Type:    types.MessageTypeNotificationList,
 		Payload: notifications,
 	}

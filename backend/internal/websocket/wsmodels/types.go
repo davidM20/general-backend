@@ -37,6 +37,7 @@ type NotificationInfo struct {
 	Timestamp time.Time   `json:"timestamp"`         // Cuándo se generó la notificación
 	IsRead    bool        `json:"isRead"`            // Si el usuario ha leído esta notificación
 	Payload   interface{} `json:"payload,omitempty"` // Datos adicionales específicos del tipo de notificación (ej. FromUserID, ProjectID)
+	Profile   ProfileData `json:"profile,omitempty"` // Información del usuario que generó la notificación
 }
 
 // ProfileData representa la información completa del perfil de un usuario.
@@ -66,7 +67,7 @@ type ProfileData struct {
 	CreatedAt          time.Time       `json:"createdAt"`
 	UpdatedAt          time.Time       `json:"updatedAt"`
 	Curriculum         CurriculumVitae `json:"curriculum"`
-	IsOnline           bool            `json:"isOnline,omitempty"` // Añadido para perfiles de otros usuarios
+	IsOnline           bool            `json:"isOnline,omitempty"`
 }
 
 // CurriculumVitae agrupa las secciones del currículum de un usuario.
@@ -159,4 +160,22 @@ type EnterpriseInfo struct {
 	Location     string `json:"location,omitempty"`
 	Phone        string `json:"phone,omitempty"`
 	// Se podría añadir un logo o imagen de la empresa
+}
+
+// MessageDB representa un mensaje tal como se almacena y se transmite para el historial.
+// Los campos se basan en la tabla Message y las necesidades del frontend.
+type MessageDB struct {
+	Id            string `json:"id"`           // ID único del mensaje (UUID)
+	ChatId        string `json:"chatId"`       // ID del chat al que pertenece
+	FromUserId    int64  `json:"fromUserId"`   // ID del usuario que envió el mensaje
+	TargetUserId  int64  `json:"targetUserId"` // ID del usuario/grupo destinatario
+	Text          string `json:"text"`         // Contenido del mensaje
+	Timestamp     string `json:"timestamp"`    // Timestamp ISO8601 UTC del mensaje. Equivalente a 'Date' de la BD pero como string.
+	Status        string `json:"status"`       // Estado del mensaje (ej: "sent", "delivered", "read"). Mapea desde 'StatusMessage'.
+	TypeMessageId int64  `json:"typeMessageId,omitempty"`
+	MediaId       string `json:"mediaId,omitempty"`
+	// Campos que podrían ser necesarios del schema.sql y el frontend:
+	// ResponseTo    string `json:"responseTo,omitempty"`
+	// ChatIdGroup   string `json:"chatIdGroup,omitempty"`
+	// IsMyMessage   int    `json:"isMyMessage,omitempty"` // El frontend lo calcula, pero podría venir del backend
 }

@@ -54,6 +54,7 @@ const (
 	// --- Chat --- Server -> Client
 	MessageTypeChatList             MessageType = "chat_list"
 	MessageTypeNewChatMessage       MessageType = "new_chat_message"
+	MessageTypeChatHistory          MessageType = "chat_history"           // Nuevo: Para enviar el historial de mensajes de un chat
 	MessageTypeMessageStatusUpdated MessageType = "message_status_updated" // Ej: delivered_to_recipient, read_by_recipient
 	MessageTypeTypingEvent          MessageType = "typing_event"           // Evento de "está escribiendo"
 

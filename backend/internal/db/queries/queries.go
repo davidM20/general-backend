@@ -3,6 +3,7 @@ package queries
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
@@ -345,16 +346,22 @@ func CreateEvent(db *sql.DB, event *models.Event) error {
 	if event.CreateAt.IsZero() {
 		event.CreateAt = time.Now().UTC()
 	}
-	query := `INSERT INTO Event (Description, UserId, OtherUserId, ProyectId, CreateAt, GroupId)
-	          VALUES (?, ?, ?, ?, ?, ?)`
+	// Asegurarse de que IsRead sea false por defecto si no se especifica
+	// Aunque el valor por defecto de bool es false, es bueno ser explícito.
+	// event.IsRead = false // No es necesario si el struct ya lo tiene como false por defecto
+
+	query := `INSERT INTO Event (EventType, EventTitle, Description, UserId, OtherUserId, ProyectId, CreateAt, IsRead)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := db.Exec(query,
+		event.EventType,  // Nuevo campo
+		event.EventTitle, // Nuevo campo
 		event.Description,
 		event.UserId,
 		event.OtherUserId, // sql.NullInt64 se maneja directamente por el driver
 		event.ProyectId,   // sql.NullInt64 se maneja directamente por el driver
 		event.CreateAt,
-		nil, // GroupId como NULL por defecto
+		event.IsRead, // Nuevo campo
 	)
 	if err != nil {
 		return fmt.Errorf("error insertando evento: %w", err)
@@ -362,45 +369,57 @@ func CreateEvent(db *sql.DB, event *models.Event) error {
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		// Podría ser que la tabla no use AUTO_INCREMENT o el driver no lo soporte bien
-		// o el ID no sea int64. Si el ID es un UUID, debe ser establecido por la app.
-		// Por ahora, si hay error, no actualizamos el ID asumiendo que ya está (ej. si fuera UUID)
-		// o no es necesario recuperarlo para esta operación.
-		// Sin embargo, la tabla Event tiene ID BIGINT AUTO_INCREMENT, por lo que esto debería funcionar.
 		return fmt.Errorf("error obteniendo LastInsertId para evento: %w", err)
 	}
 	event.Id = id
 	return nil
 }
 
-// GetNotificationsForUser recupera las notificaciones para un usuario, con paginación.
-// Incluye lógica para convertir models.Event a wsmodels.NotificationInfo.
+// GetNotificationsForUser recupera todas las notificaciones para un usuario.
+// También popula la información del perfil del usuario que originó la notificación (OtherUser) usando un JOIN.
+// NOTA: EventType, EventTitle, e IsRead se omiten temporalmente de la consulta a la tabla Event,
+//
+//	asumiendo que se añadirán a la BD más adelante.
 func GetNotificationsForUser(db *sql.DB, userID int64, onlyUnread bool, limit int, offset int) ([]wsmodels.NotificationInfo, error) {
-	var args []interface{}
-	queryStr := `SELECT Id, Description, UserId, OtherUserId, ProyectId, CreateAt, GroupId
-	            FROM Event
-	            WHERE UserId = ?`
-	args = append(args, userID)
+	var rows *sql.Rows
+	var err error
 
-	// Nota: onlyUnread no se puede aplicar porque la tabla Event no tiene columna IsRead
-	// Por ahora, ignoramos el parámetro onlyUnread y devolvemos todas las notificaciones
+	// Campos a seleccionar: Omitiendo e.EventType, e.EventTitle, e.IsRead temporalmente
+	queryFields := `
+		e.Id, e.Description, e.CreateAt,
+		e.OtherUserId, e.ProyectId,
+		u.Id AS ProfileId,
+		u.FirstName AS ProfileFirstName,
+		u.LastName AS ProfileLastName,
+		u.UserName AS ProfileUserName,
+		u.Picture AS ProfilePicture,
+		u.Email AS ProfileEmail
+	`
+	// La tabla Event se aliasa como 'e', User como 'u'
+	baseQuery := fmt.Sprintf("SELECT %s FROM Event e LEFT JOIN User u ON e.OtherUserId = u.Id WHERE e.UserId = ?", queryFields)
+	args := []interface{}{userID}
+
 	if onlyUnread {
-		// Ignoramos el filtro por ahora, ya que no existe la columna IsRead
-		// TODO: Agregar columna IsRead a la tabla Event si se necesita
+		// TODO: Cuando IsRead se añada a la BD y a la consulta, esta condición deberá usar e.IsRead
+		// baseQuery += " AND e.IsRead = false"
+		// Por ahora, si onlyUnread es true, podría no devolver nada o devolver todo,
+		// dependiendo de cómo se quiera manejar la ausencia de IsRead.
+		// Para ser seguro y evitar errores, si onlyUnread es true y la columna no existe,
+		// podríamos añadir una condición que siempre sea falsa si se quiere simular "no hay no leídas",
+		// o simplemente ignorar el filtro por ahora. Ignorémoslo temporalmente.
+		fmt.Println("[GetNotificationsForUser] ADVERTENCIA: onlyUnread=true pero la columna IsRead no se está consultando.")
 	}
-
-	queryStr += ` ORDER BY CreateAt DESC`
-
+	baseQuery += " ORDER BY e.CreateAt DESC"
 	if limit > 0 {
-		queryStr += ` LIMIT ?`
+		baseQuery += " LIMIT ?"
 		args = append(args, limit)
 	}
 	if offset > 0 {
-		queryStr += ` OFFSET ?`
+		baseQuery += " OFFSET ?"
 		args = append(args, offset)
 	}
 
-	rows, err := db.Query(queryStr, args...)
+	rows, err = db.Query(baseQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("error consultando notificaciones para userID %d: %w", userID, err)
 	}
@@ -408,63 +427,114 @@ func GetNotificationsForUser(db *sql.DB, userID int64, onlyUnread bool, limit in
 
 	var notifications []wsmodels.NotificationInfo
 	for rows.Next() {
-		var event models.Event
-		var groupId sql.NullInt64
-		if err := rows.Scan(
-			&event.Id,
-			&event.Description,
-			&event.UserId,
-			&event.OtherUserId,
-			&event.ProyectId,
-			&event.CreateAt,
-			&groupId,
-		); err != nil {
-			return nil, fmt.Errorf("error escaneando evento: %w", err)
+		var notification wsmodels.NotificationInfo
+		var rawCreateAt []byte // Para escanear el timestamp directamente
+
+		// Variables para los campos del perfil que pueden ser NULL
+		var profileID sql.NullInt64
+		var profileFirstName sql.NullString
+		var profileLastName sql.NullString
+		var profileUserName sql.NullString
+		var profilePicture sql.NullString
+		var profileEmail sql.NullString
+
+		// Variables para OtherUserId y ProyectId de la tabla Event
+		var otherUserID sql.NullInt64
+		var projectID sql.NullInt64
+
+		// Escanear los campos disponibles. notification.Type, notification.Title, notification.IsRead
+		// quedarán con sus zero values (string vacío, false).
+		err := rows.Scan(
+			&notification.ID, &notification.Message, &rawCreateAt, // EventType, EventTitle, IsRead omitidos
+			&otherUserID, &projectID,
+			&profileID, &profileFirstName, &profileLastName, &profileUserName, &profilePicture, &profileEmail,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error escaneando fila de notificación: %w", err)
 		}
 
-		// Construir el payload para NotificationInfo a partir de los campos de Event
-		payload := make(map[string]interface{})
-		if event.OtherUserId.Valid {
-			payload["otherUserId"] = event.OtherUserId.Int64
-			// Podríamos querer cargar el nombre de usuario de OtherUserId aquí
-			// otherUserInfo, _ := GetUserBaseInfo(db, event.OtherUserId.Int64)
-			// if otherUserInfo != nil { payload["otherUsername"] = otherUserInfo.UserName }
+		// notification.Type = "" (valor por defecto)
+		// notification.Title = "" (valor por defecto)
+		// notification.IsRead = false (valor por defecto)
+
+		parsedTime, parseErr := time.Parse("2006-01-02 15:04:05", string(rawCreateAt))
+		if parseErr != nil {
+			parsedTime, parseErr = time.Parse(time.RFC3339, string(rawCreateAt))
+			if parseErr != nil {
+				return nil, fmt.Errorf("error parseando CreateAt de notificación (%s): %w", string(rawCreateAt), parseErr)
+			}
 		}
-		if event.ProyectId.Valid {
-			payload["projectId"] = event.ProyectId.Int64
+		notification.Timestamp = parsedTime
+
+		payloadMap := make(map[string]interface{})
+		if otherUserID.Valid {
+			payloadMap["otherUserId"] = otherUserID.Int64
 		}
-		if groupId.Valid {
-			payload["groupId"] = groupId.Int64
+		if projectID.Valid {
+			payloadMap["projectId"] = projectID.Int64
+		}
+		notification.Payload = payloadMap
+
+		if otherUserID.Valid && profileID.Valid {
+			notification.Profile = wsmodels.ProfileData{
+				ID:        profileID.Int64,
+				FirstName: profileFirstName.String,
+				LastName:  profileLastName.String,
+				UserName:  profileUserName.String,
+				Picture:   profilePicture.String,
+				Email:     profileEmail.String,
+			}
 		}
 
-		notifications = append(notifications, wsmodels.NotificationInfo{
-			ID:        fmt.Sprintf("%d", event.Id),
-			Type:      "general",      // Tipo por defecto ya que no existe EventType
-			Title:     "Notificación", // Título por defecto ya que no existe EventTitle
-			Message:   event.Description,
-			Timestamp: event.CreateAt,
-			IsRead:    false, // Por defecto false ya que no existe columna IsRead
-			Payload:   payload,
-		})
+		notifications = append(notifications, notification)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error después de iterar sobre filas de eventos: %w", err)
+
+	if errRows := rows.Err(); errRows != nil {
+		return nil, fmt.Errorf("error después de iterar sobre filas de eventos: %w", errRows)
 	}
+
 	return notifications, nil
 }
 
 // MarkNotificationAsRead marca una notificación específica como leída para un usuario.
 func MarkNotificationAsRead(db *sql.DB, notificationID string, userID int64) error {
-	// NOTA: La tabla Event no tiene columna IsRead, por lo que esta función no hace nada por ahora
-	// TODO: Agregar columna IsRead a la tabla Event si se necesita funcionalidad de marcar como leído
-	return nil // No hacer nada por ahora
+	// Convertir notificationID de string a int64
+	notifID, err := strconv.ParseInt(notificationID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("ID de notificación inválido: %s", notificationID)
+	}
+
+	query := `UPDATE Event SET IsRead = ? WHERE Id = ? AND UserId = ?`
+	result, err := db.Exec(query, true, notifID, userID)
+	if err != nil {
+		return fmt.Errorf("error marcando notificación %d como leída para usuario %d: %w", notifID, userID, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error obteniendo filas afectadas al marcar notificación como leída: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("notificación %d no encontrada para usuario %d o ya marcada como leída", notifID, userID)
+	}
+
+	return nil
 }
 
 // MarkAllNotificationsAsRead marca todas las notificaciones como leídas para un usuario.
 func MarkAllNotificationsAsRead(db *sql.DB, userID int64) (int64, error) {
-	// NOTA: La tabla Event no tiene columna IsRead, por lo que esta función no hace nada por ahora
-	// TODO: Agregar columna IsRead a la tabla Event si se necesita funcionalidad de marcar como leído
-	return 0, nil // No hacer nada por ahora
+	query := `UPDATE Event SET IsRead = ? WHERE UserId = ? AND IsRead = ?`
+	result, err := db.Exec(query, true, userID, false) // true para marcar como leída, false para seleccionar no leídas
+	if err != nil {
+		return 0, fmt.Errorf("error marcando todas las notificaciones como leídas para usuario %d: %w", userID, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("error obteniendo filas afectadas al marcar todas las notificaciones como leídas: %w", err)
+	}
+	return rowsAffected, nil
 }
 
 // --- Perfil de Usuario ---
@@ -477,8 +547,7 @@ func GetUserFullProfileData(db *sql.DB, userID int64) (*models.User, error) {
 	            u.Id, u.FirstName, u.LastName, u.UserName, u.Email, u.Phone, u.Sex, u.DocId,
 	            u.NationalityId, n.CountryName AS NationalityName, u.Birthdate, u.Picture,
 	            u.DegreeId, d.DegreeName AS DegreeName, u.UniversityId, un.Name AS UniversityName,
-	            u.RoleId, r.Name AS RoleName, u.StatusAuthorizedId, u.Summary, u.Address, u.Github, u.Linkedin,
-	            u.CreateAt, u.UpdateAt
+	            u.RoleId, r.Name AS RoleName, u.StatusAuthorizedId, u.Summary, u.Address, u.Github, u.Linkedin
 	        FROM User u
 	        LEFT JOIN Nationality n ON u.NationalityId = n.Id
 	        LEFT JOIN Degree d ON u.DegreeId = d.Id
@@ -491,7 +560,6 @@ func GetUserFullProfileData(db *sql.DB, userID int64) (*models.User, error) {
 		&user.NationalityId, &user.NationalityName, &user.Birthdate, &user.Picture,
 		&user.DegreeId, &user.DegreeName, &user.UniversityId, &user.UniversityName,
 		&user.RoleId, &user.RoleName, &user.StatusAuthorizedId, &user.Summary, &user.Address, &user.Github, &user.Linkedin,
-		&user.CreateAt, &user.UpdateAt, // Asegúrate que los campos CreateAt y UpdateAt existan en tu struct models.User y tabla User
 	)
 
 	if err != nil {
@@ -640,3 +708,27 @@ func GetProjectItemsForUser(db *sql.DB, personID int64) ([]models.Project, error
 
 // TODO: Funciones para Crear, Actualizar, Eliminar items de perfil (Educación, Experiencia, etc.)
 // TODO: Funciones para Actualizar campos del perfil principal (User.Summary, User.Picture, etc.)
+
+// GetContactByChatID recupera la información de un contacto por su ChatId.
+func GetContactByChatID(db *sql.DB, chatID string) (*models.Contact, error) {
+	contact := &models.Contact{}
+	query := `SELECT ContactId, User1Id, User2Id, Status, ChatId
+	          FROM Contact
+	          WHERE ChatId = ? LIMIT 1`
+
+	err := db.QueryRow(query, chatID).Scan(
+		&contact.ContactId,
+		&contact.User1Id,
+		&contact.User2Id,
+		&contact.Status,
+		&contact.ChatId,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("contacto con ChatID %s no encontrado", chatID)
+		}
+		return nil, fmt.Errorf("error consultando contacto por ChatID %s: %w", chatID, err)
+	}
+	return contact, nil
+}

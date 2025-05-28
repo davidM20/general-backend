@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	// Necesario para convertir sql.NullTime a string
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
@@ -77,20 +78,20 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 		Sex:                userDTO.Sex,
 		DocId:              userDTO.DocId,
 		NationalityId:      userDTO.NationalityId,
-		NationalityName:    userData.NationalityName, // Viene del JOIN en GetUserFullProfileData
+		NationalityName:    safeNullString(userData.NationalityName), // Viene del JOIN en GetUserFullProfileData y maneja NULL
 		Birthdate:          userDTO.Birthdate,
 		Picture:            userDTO.Picture,
-		DegreeName:         userData.DegreeName,     // Viene del JOIN
-		UniversityName:     userData.UniversityName, // Viene del JOIN
+		DegreeName:         safeNullString(userData.DegreeName),     // Viene del JOIN y maneja NULL
+		UniversityName:     safeNullString(userData.UniversityName), // Viene del JOIN y maneja NULL
 		RoleID:             userDTO.RoleId,
-		RoleName:           userData.RoleName, // Viene del JOIN
+		RoleName:           safeNullString(userData.RoleName), // Viene del JOIN y maneja NULL
 		StatusAuthorizedId: userDTO.StatusAuthorizedId,
 		Summary:            userDTO.Summary,
 		Address:            userDTO.Address,
 		Github:             userDTO.Github,
 		Linkedin:           userDTO.Linkedin,
-		CreatedAt:          userDTO.CreateAt,
-		UpdatedAt:          userDTO.UpdateAt,
+		CreatedAt:          time.Time{},
+		UpdatedAt:          time.Time{},
 		Curriculum: wsmodels.CurriculumVitae{
 			Education:      make([]wsmodels.EducationItem, 0),
 			Experience:     make([]wsmodels.WorkExperienceItem, 0),
@@ -115,7 +116,7 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 			Degree:         dbItem.Degree,
 			Campus:         dbItem.Campus,
 			GraduationDate: formatNullTimeToString(dbItem.GraduationDate, "2006-01-02"),
-			CountryID:      dbItem.CountryId,
+			CountryID:      safeNullInt64(dbItem.CountryId),
 			CountryName:    dbItem.CountryName, // Usar directamente el campo del modelo
 		})
 	}
@@ -129,7 +130,7 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 			StartDate:   formatNullTimeToString(dbItem.StartDate, "2006-01-02"),
 			EndDate:     formatNullTimeToString(dbItem.EndDate, "2006-01-02"),
 			Description: dbItem.Description,
-			CountryID:   dbItem.CountryId,
+			CountryID:   safeNullInt64(dbItem.CountryId),
 			CountryName: dbItem.CountryName, // Usar directamente el campo del modelo
 		})
 	}
@@ -187,6 +188,22 @@ func formatNullTimeToString(nt sql.NullTime, layout string) string {
 		return nt.Time.Format(layout)
 	}
 	return ""
+}
+
+// Helper function to safely get string from sql.NullString
+func safeNullString(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
+}
+
+// Helper function to safely get int64 from sql.NullInt64, returning 0 if not valid.
+func safeNullInt64(ni sql.NullInt64) int64 {
+	if ni.Valid {
+		return ni.Int64
+	}
+	return 0 // O el valor por defecto que consideres apropiado si NULL
 }
 
 // TODO: Implementar funciones del servicio de perfil

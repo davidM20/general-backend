@@ -82,22 +82,20 @@ type User struct {
 	Sex                sql.NullString `json:"sex" db:"Sex"`                      // Handle NULL (Asumiendo que puede ser NULL)
 	DocId              sql.NullString `json:"doc_id" db:"DocId"`                 // Handle NULL
 	NationalityId      sql.NullInt32  `json:"nationality_id" db:"NationalityId"` // Handle NULL (int es int32)
-	NationalityName    string         `json:"nationality_name,omitempty" db:"NationalityName"`
+	NationalityName    sql.NullString `json:"nationality_name,omitempty" db:"NationalityName"`
 	Birthdate          sql.NullTime   `json:"birthdate" db:"Birthdate"` // Handle NULL
 	Picture            sql.NullString `json:"picture" db:"Picture"`     // Handle NULL
 	DegreeId           sql.NullInt64  `json:"degree_id" db:"DegreeId"`  // Handle NULL
-	DegreeName         string         `json:"degree_name,omitempty" db:"DegreeName"`
+	DegreeName         sql.NullString `json:"degree_name,omitempty" db:"DegreeName"`
 	UniversityId       sql.NullInt64  `json:"university_id" db:"UniversityId"` // Handle NULL
-	UniversityName     string         `json:"university_name,omitempty" db:"UniversityName"`
+	UniversityName     sql.NullString `json:"university_name,omitempty" db:"UniversityName"`
 	RoleId             int            `json:"role_id" db:"RoleId"` // Asumiendo no NULL
-	RoleName           string         `json:"role_name,omitempty" db:"RoleName"`
+	RoleName           sql.NullString `json:"role_name,omitempty" db:"RoleName"`
 	StatusAuthorizedId int            `json:"status_authorized_id" db:"StatusAuthorizedId"` // Asumiendo no NULL
 	Summary            sql.NullString `json:"summary" db:"Summary"`                         // Handle NULL
 	Address            sql.NullString `json:"address" db:"Address"`                         // Handle NULL
 	Github             sql.NullString `json:"github" db:"Github"`                           // Handle NULL
 	Linkedin           sql.NullString `json:"linkedin" db:"Linkedin"`                       // Handle NULL
-	CreateAt           time.Time      `json:"create_at" db:"CreateAt"`                      // Descomentado
-	UpdateAt           time.Time      `json:"update_at" db:"UpdateAt"`                      // Descomentado
 }
 
 // Online defines the structure for the Online table.
@@ -153,27 +151,27 @@ type Message struct {
 
 // Education defines the structure for the Education table.
 type Education struct {
-	Id             int64        `json:"id" db:"Id"`
-	PersonId       int64        `json:"person_id" db:"PersonId"`
-	Institution    string       `json:"institution" db:"Institution"`
-	Degree         string       `json:"degree" db:"Degree"`
-	Campus         string       `json:"campus" db:"Campus"`
-	GraduationDate sql.NullTime `json:"graduation_date" db:"GraduationDate"` // Handle NULL
-	CountryId      int64        `json:"country_id" db:"CountryId"`
-	CountryName    string       `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
+	Id             int64         `json:"id" db:"Id"`
+	PersonId       int64         `json:"person_id" db:"PersonId"`
+	Institution    string        `json:"institution" db:"Institution"`
+	Degree         string        `json:"degree" db:"Degree"`
+	Campus         string        `json:"campus" db:"Campus"`
+	GraduationDate sql.NullTime  `json:"graduation_date" db:"GraduationDate"`     // Handle NULL
+	CountryId      sql.NullInt64 `json:"country_id" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
+	CountryName    string        `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
 }
 
 // WorkExperience defines the structure for the WorkExperience table.
 type WorkExperience struct {
-	Id          int64        `json:"id" db:"Id"`
-	PersonId    int64        `json:"person_id" db:"PersonId"`
-	Company     string       `json:"company" db:"Company"`
-	Position    string       `json:"position" db:"Position"`
-	StartDate   sql.NullTime `json:"start_date" db:"StartDate"` // Handle NULL
-	EndDate     sql.NullTime `json:"end_date" db:"EndDate"`     // Handle NULL
-	Description string       `json:"description" db:"Description"`
-	CountryId   int64        `json:"country_id" db:"CountryId"`
-	CountryName string       `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
+	Id          int64         `json:"id" db:"Id"`
+	PersonId    int64         `json:"person_id" db:"PersonId"`
+	Company     string        `json:"company" db:"Company"`
+	Position    string        `json:"position" db:"Position"`
+	StartDate   sql.NullTime  `json:"start_date" db:"StartDate"` // Handle NULL
+	EndDate     sql.NullTime  `json:"end_date" db:"EndDate"`     // Handle NULL
+	Description string        `json:"description" db:"Description"`
+	CountryId   sql.NullInt64 `json:"country_id" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
+	CountryName string        `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
 }
 
 // Certifications defines the structure for the Certifications table.
@@ -284,27 +282,27 @@ type LoginResponse struct {
 
 // UserDTO defines a clean user structure for API responses without sql.Null types
 type UserDTO struct {
-	Id                 int64     `json:"id"`
-	FirstName          string    `json:"first_name"`
-	LastName           string    `json:"last_name"`
-	UserName           string    `json:"user_name"`
-	Email              string    `json:"email"`
-	Phone              string    `json:"phone,omitempty"`
-	Sex                string    `json:"sex,omitempty"`
-	DocId              string    `json:"doc_id,omitempty"`
-	NationalityId      int       `json:"nationality_id,omitempty"`
-	Birthdate          string    `json:"birthdate,omitempty"` // Format: YYYY-MM-DD
-	Picture            string    `json:"picture,omitempty"`
-	DegreeId           int64     `json:"degree_id,omitempty"`
-	UniversityId       int64     `json:"university_id,omitempty"`
-	RoleId             int       `json:"role_id"`
-	StatusAuthorizedId int       `json:"status_authorized_id"`
-	Summary            string    `json:"summary,omitempty"`
-	Address            string    `json:"address,omitempty"`
-	Github             string    `json:"github,omitempty"`
-	Linkedin           string    `json:"linkedin,omitempty"`
-	CreateAt           time.Time `json:"create_at"`
-	UpdateAt           time.Time `json:"update_at"`
+	Id                 int64  `json:"id"`
+	FirstName          string `json:"first_name"`
+	LastName           string `json:"last_name"`
+	UserName           string `json:"user_name"`
+	Email              string `json:"email"`
+	Phone              string `json:"phone,omitempty"`
+	Sex                string `json:"sex,omitempty"`
+	DocId              string `json:"doc_id,omitempty"`
+	NationalityId      int    `json:"nationality_id,omitempty"`
+	Birthdate          string `json:"birthdate,omitempty"` // Format: YYYY-MM-DD
+	Picture            string `json:"picture,omitempty"`
+	DegreeId           int64  `json:"degree_id,omitempty"`
+	UniversityId       int64  `json:"university_id,omitempty"`
+	RoleId             int    `json:"role_id"`
+	StatusAuthorizedId int    `json:"status_authorized_id"`
+	Summary            string `json:"summary,omitempty"`
+	Address            string `json:"address,omitempty"`
+	Github             string `json:"github,omitempty"`
+	Linkedin           string `json:"linkedin,omitempty"`
+	CreatedAt          string `json:"created_at,omitempty"`
+	UpdatedAt          string `json:"updated_at,omitempty"`
 }
 
 // ToUserDTO converts a User model to a clean UserDTO for API responses
@@ -317,8 +315,6 @@ func (u *User) ToUserDTO() UserDTO {
 		Email:              u.Email,
 		RoleId:             u.RoleId,
 		StatusAuthorizedId: u.StatusAuthorizedId,
-		CreateAt:           u.CreateAt,
-		UpdateAt:           u.UpdateAt,
 	}
 
 	// Handle sql.Null* fields

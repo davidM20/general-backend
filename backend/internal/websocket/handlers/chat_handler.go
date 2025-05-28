@@ -153,6 +153,79 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 
 // TODO: Implementar HandleMessagesRead, HandleTypingIndicatorOn, HandleTypingIndicatorOff
 
+// HandleGetChatHistory maneja la solicitud del cliente para obtener el historial de mensajes de un chat.
+func HandleGetChatHistory(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
+	logger.Infof("HANDLER_CHAT", "User %d solicitó historial de chat. PID: %s", conn.ID, msg.PID)
+
+	type GetChatHistoryPayload struct {
+		ChatID          string `json:"chatId"`
+		Limit           int    `json:"limit,omitempty"`
+		BeforeMessageID string `json:"beforeMessageId,omitempty"` // Para paginación
+	}
+
+	var historyPayload GetChatHistoryPayload
+	payloadBytes, err := json.Marshal(msg.Payload)
+	if err != nil {
+		conn.SendErrorNotification(msg.PID, 400, "Error decodificando payload de get_history (marshal): "+err.Error())
+		return errors.New("error marshalling get_history payload: " + err.Error())
+	}
+	if err := json.Unmarshal(payloadBytes, &historyPayload); err != nil {
+		conn.SendErrorNotification(msg.PID, 400, "Error decodificando payload de get_history (unmarshal): "+err.Error())
+		return errors.New("error unmarshalling get_history payload: " + err.Error())
+	}
+
+	if historyPayload.ChatID == "" {
+		conn.SendErrorNotification(msg.PID, 400, "ChatID es requerido para obtener el historial.")
+		return errors.New("chatID no especificado en get_history")
+	}
+
+	// Establecer un límite predeterminado si no se proporciona
+	if historyPayload.Limit <= 0 {
+		historyPayload.Limit = 50 // Límite predeterminado de mensajes
+	}
+
+	// Llamar al servicio para obtener el historial de mensajes
+	// TODO: Implementar services.GetChatHistory y el modelo de mensaje para la respuesta
+	messages, err := services.GetChatHistory(historyPayload.ChatID, conn.ID, historyPayload.Limit, historyPayload.BeforeMessageID, conn.Manager())
+	if err != nil {
+		logger.Errorf("HANDLER_CHAT", "Error obteniendo historial para chat %s, user %d: %v", historyPayload.ChatID, conn.ID, err)
+		conn.SendErrorNotification(msg.PID, 500, "Error al obtener el historial del chat: "+err.Error())
+		return err
+	}
+
+	responseMsg := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       types.MessageTypeChatHistory, // Asumimos que este tipo existe o lo creamos
+		FromUserID: conn.ID,
+		Payload:    messages, // messages debería ser una lista de mensajes
+	}
+
+	if err := conn.SendMessage(responseMsg); err != nil {
+		logger.Errorf("HANDLER_CHAT", "Error enviando historial de chat %s a user %d: %v", historyPayload.ChatID, conn.ID, err)
+		return err
+	}
+
+	// Enviar ACK al cliente
+	if msg.PID != "" {
+		ackPayload := types.AckPayload{
+			AcknowledgedPID: msg.PID,
+			Status:          "chat_history_sent",
+		}
+		ackMsg := types.ServerToClientMessage{
+			PID:        conn.Manager().Callbacks().GeneratePID(),
+			Type:       types.MessageTypeServerAck,
+			FromUserID: conn.ID,
+			Payload:    ackPayload,
+		}
+		if err := conn.SendMessage(ackMsg); err != nil {
+			logger.Warnf("HANDLER_CHAT", "Error enviando ServerAck para GetChatHistory a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
+		}
+	}
+
+	logger.Successf("HANDLER_CHAT", "Historial de chat %s enviado a user %d. PID respuesta: %s", historyPayload.ChatID, conn.ID, responseMsg.PID)
+	return nil
+}
+
 // HandleDataRequest maneja solicitudes de datos genéricas y las redirecciona a los handlers específicos
 func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("HANDLER_DATA", "Data request recibida de UserID %d. PID: %s", conn.ID, msg.PID)
@@ -232,6 +305,20 @@ func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types
 			return HandleGetNotifications(conn, notifMsg)
 		default:
 			errorMsg := "Recurso no soportado para get_pending: " + dataPayload.Resource
+			conn.SendErrorNotification(msg.PID, 400, errorMsg)
+			return errors.New(errorMsg)
+		}
+
+	case "get_history": // Nueva acción
+		switch dataPayload.Resource {
+		case "chat":
+			// Modificar msg para que su Payload sea dataPayload.Data,
+			// que es lo que HandleGetChatHistory espera.
+			historyMsg := msg
+			historyMsg.Payload = dataPayload.Data
+			return HandleGetChatHistory(conn, historyMsg)
+		default:
+			errorMsg := "Recurso no soportado para get_history: " + dataPayload.Resource
 			conn.SendErrorNotification(msg.PID, 400, errorMsg)
 			return errors.New(errorMsg)
 		}

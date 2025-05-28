@@ -58,15 +58,12 @@ func ProcessAndSendNotification(userIDToNotify int64, eventType string, title st
 	wsPayload := make(map[string]interface{})
 	if event.OtherUserId.Valid {
 		wsPayload["otherUserId"] = event.OtherUserId.Int64
-		// Considerar cargar y añadir más info de otherUser si es necesario para la notificación
-		// Por ejemplo, otherUserUsername, otherUserPicture
 	}
 	if event.ProyectId.Valid {
 		wsPayload["projectId"] = event.ProyectId.Int64
 	}
-	// Añadir cualquier otro dato de relatedData que deba ir en el payload de la notificación WS
 	for key, value := range relatedData {
-		if key != "otherUserId" && key != "projectId" { // Evitar duplicados si ya se manejaron
+		if key != "otherUserId" && key != "projectId" {
 			wsPayload[key] = value
 		}
 	}
@@ -76,10 +73,32 @@ func ProcessAndSendNotification(userIDToNotify int64, eventType string, title st
 		Type:      event.EventType,
 		Title:     event.EventTitle,
 		Message:   event.Description,
-		Timestamp: event.CreateAt, // Usar el CreateAt del evento guardado
+		Timestamp: event.CreateAt,
 		IsRead:    event.IsRead,
 		Payload:   wsPayload,
+		// Profile se poblará a continuación si OtherUserId existe
 	}
+
+	if event.OtherUserId.Valid {
+		otherUserInfo, err := queries.GetUserBaseInfo(notificationDB, event.OtherUserId.Int64)
+		if err != nil {
+			logger.Warnf("SERVICE_NOTIFICATION", "Error obteniendo UserBaseInfo para OtherUserId %d para notificación en tiempo real: %v", event.OtherUserId.Int64, err)
+		} else if otherUserInfo != nil {
+			notificationForClient.Profile = wsmodels.ProfileData{
+				ID:        otherUserInfo.ID,
+				FirstName: otherUserInfo.FirstName,
+				LastName:  otherUserInfo.LastName,
+				UserName:  otherUserInfo.UserName,
+				Picture:   otherUserInfo.Picture,
+				// El resto de los campos de ProfileData (Email, RoleName, etc.)
+				// no están en models.UserBaseInfo, por lo que quedarán como sus zero values.
+			}
+		}
+	}
+
+	// DEBUG: Loguear la notificación ANTES de enviarla
+	logger.Debugf("SERVICE_NOTIFICATION", "Nueva notificación para UserID %d (antes de enviar): ID=%s, Type=%s, Title=%s, ProfileID=%d, ProfileName=%s, ProfilePic=%s, Payload=%+v",
+		userIDToNotify, notificationForClient.ID, notificationForClient.Type, notificationForClient.Title, notificationForClient.Profile.ID, notificationForClient.Profile.FirstName+" "+notificationForClient.Profile.LastName, notificationForClient.Profile.Picture, notificationForClient.Payload)
 
 	if manager.IsUserOnline(userIDToNotify) {
 		serverMessage := types.ServerToClientMessage{
