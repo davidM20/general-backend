@@ -1,0 +1,144 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Eres un asistente de IA experto en Go. Necesito implementar una funcionalidad para guardar mensajes de chat en una aplicación existente.
+
+
+# Arquitectura del Proyecto Backend
+
+## Reglas de Desarrollo para Go
+
+1. **Manejo de Mensajes de Chat**:
+   - Implementar siguiendo el flujo: WebSocket → Handler → Service → Query
+   - Usar los modelos existentes en `models.go` para estructuras de datos
+   - Registrar nuevas consultas SQL en `queries/queries.go`
+
+2. **Capa de Base de Datos**:
+   - Mantener compatibilidad con sintaxis MySQL
+   - Usar el wrapper de métricas para consultas:
+   ```go
+   result, err := queries.MeasureQueryWithResult(func() (interface{}, error) {
+       return queries.GetChatMessages(db, params)
+   })
+   ```
+
+3. **WebSocket**:
+   - Utilizar el paquete `customws` para gestión de conexiones
+   - Los DTOs específicos van en `wsmodels/types.go`
+   - Implementar lógica de negocio en `services/chat_service.go`
+
+4. **Logging**:
+   - Usar el logger configurado para todos los eventos:
+   ```go
+   logger.Infof("CHAT", "Nuevo mensaje de usuario %d", userID)
+   ```
+
+5. **Patrones de Diseño**:
+   - Inyección de dependencias en constructores
+   - Separación clara entre:
+     - Handlers (coordinación de flujo)
+     - Services (lógica de negocio)
+     - Queries (acceso a BD)
+
+## Estructura Actual (actualizada)
+```
+backend/
+├── internal/
+│   ├── websocket/
+│   │   ├── services/
+│   │   │   └── chat_service.go    # Lógica de procesamiento de mensajes
+│   │   └── handlers/              # Manejadores de mensajes WS
+│   ├── db/
+│   │   └── queries/               # Consultas SQL con métricas
+│   └── models/                    # Modelos de BD
+└── pkg/
+    ├── customws/                  # Gestión de conexiones WS
+    └── logger/                    # Sistema de logging unificado
+```
+
+## Flujo de Mensajes
+```mermaid
+sequenceDiagram
+    participant WS as WebSocket
+    participant H as Handler
+    participant S as Service
+    participant Q as Query
+    participant DB as Database
+    
+    WS->>H: Mensaje entrante
+    H->>S: Procesar mensaje
+    S->>Q: Ejecutar consulta
+    Q->>DB: Operación SQL
+    DB-->>Q: Resultado
+    Q-->>S: Datos
+    S-->>H: Respuesta
+    H-->>WS: Enviar respuesta
+```
+
+## Política de Actualización
+Al agregar nuevas funcionalidades relacionadas con chat:
+1. Crear handlers en `/websocket/handlers/`
+2. Implementar lógica de negocio en `services/`
+3. Añadir consultas SQL en `queries/queries.go`
+4. Actualizar modelos existentes o crear nuevos en `models/`
+5. Documentar cambios en el flujo
+6. Implementa en los archivos todas las propuestas a menos que te indiquen que no lo hagas
+7. Cuando hagas un cambio en algun archivo pon al inicio del archivo comentarios que describan las reglas y requisitos para cada archivo
+```
+
+# Estructura de Action y Resource
+
+## 1. Orden de Procesamiento
+El sistema procesa los mensajes en este orden:
+1. Primero verifica la `Action`
+2. Luego verifica el `Resource` (excepto para "ping")
+
+## 2. Combinaciones Válidas
+
+### Action: "ping"
+- No requiere Resource
+- Es la única acción que puede funcionar sin Resource
+
+### Action: "get_list"
+- **Resources válidos**:
+  - `"chat"` → Obtiene lista de chats
+  - `"notification"` → Obtiene lista de notificaciones
+
+### Action: "get_pending"
+- **Resources válidos**:
+  - `"notification"` → Obtiene notificaciones pendientes
+  - Añade automáticamente `onlyUnread: true`
+
+### Action: "get_history"
+- **Resources válidos**:
+  - `"chat"` → Obtiene historial de chat
+  - Requiere datos adicionales: `chatId`, `limit`, `beforeMessageId`
+
+### Action: "send_message"
+- **Resources válidos**:
+  - `"chat"` → Envía mensaje de chat
+  - Requiere datos adicionales: `chatId`, `text`
+
+## 3. Ejemplo de Estructura
+```json
+{
+    "action": "get_list",     // Primero se verifica la acción
+    "resource": "chat",       // Luego se verifica el recurso
+    "data": {                 // Datos específicos según la combinación
+        // campos específicos
+    }
+}
+```
+
+## 4. Reglas Importantes
+1. Toda acción (excepto "ping") DEBE tener un Resource
+2. Si no se especifica un Resource, se devuelve error 400
+3. Las combinaciones Action-Resource deben ser exactamente las especificadas
+4. Cada combinación puede requerir datos específicos en el campo `data`
+
+Esta estructura jerárquica (Action → Resource → Data) 
+
+
+IsMyMessage si es 1 es mi mensaje, caso 0 es mensaje de otra persona

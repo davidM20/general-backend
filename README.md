@@ -774,7 +774,7 @@ func setupCallbacks() customws.Callbacks[MyUserData] {
             }
             
             token := authHeader[7:] // Remover "Bearer "
-            
+
             // Aquí tu lógica para validar el token y obtener info del usuario de la BD
             // claims, err := myauth.ValidateToken(token)
             // if err != nil { return 0, MyUserData{}, err }
@@ -869,7 +869,7 @@ func setupCallbacks() customws.Callbacks[MyUserData] {
                 
             case types.MessageTypePresenceUpdate:
                 return handlePresenceUpdate(conn, msg)
-                
+
             case types.MessageTypeGenericRequest:
                 return handleGenericRequest(conn, msg)
                 
