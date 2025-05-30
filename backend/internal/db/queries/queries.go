@@ -11,6 +11,15 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	StatusMessageSent       = 1
+	StatusMessageDelivered  = 2
+	StatusMessageRead       = 3
+	StatusMessageError      = 4
+	StatusMessagePending    = 0  // Para cuando se está procesando o en cola
+	StatusMessageNotSentYet = -1 // Estado inicial antes de intentar enviar
+)
+
 // GetUserBySessionToken busca un usuario basado en un token de sesión.
 func GetUserBySessionToken(db *sql.DB, token string) (*models.User, error) {
 	// Paso 1: Buscar sesión activa por token
@@ -58,9 +67,12 @@ func GetUserBySessionToken(db *sql.DB, token string) (*models.User, error) {
 
 // CreateMessage inserta un nuevo mensaje en la tabla Message.
 // Actualiza el ID del struct msg pasado por referencia con el UUID generado.
-func CreateMessage(db *sql.DB, msg *models.Message) error {
-	// Generar UUID para el ID del mensaje
-	msg.Id = uuid.New().String()
+// Retorna el ID del mensaje creado o un error.
+func CreateMessage(db *sql.DB, msg *models.Message) (string, error) {
+	// Generar UUID para el ID del mensaje si no se ha proporcionado uno
+	if msg.Id == "" {
+		msg.Id = uuid.New().String()
+	}
 
 	if msg.Date.IsZero() {
 		msg.Date = time.Now().UTC()
@@ -71,32 +83,50 @@ func CreateMessage(db *sql.DB, msg *models.Message) error {
 		msg.TypeMessageId = 1 // Asumiendo que 1 es el tipo "texto" por defecto
 	}
 
-	// Si no se especifica StatusMessage, usar 1 (enviado)
+	// Si no se especifica StatusMessage, usar StatusMessageSent por defecto
 	if msg.StatusMessage == 0 {
-		msg.StatusMessage = 1
+		msg.StatusMessage = StatusMessageSent
 	}
 
-	queryMySQL := `INSERT INTO Message (Id, TypeMessageId, Text, MediaId, Date, StatusMessage, UserId, ChatId, ChatIdGroup, ResponseTo)
-	               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	// Manejar valores opcionales que pueden ser NULL en la BD
+	var mediaID sql.NullString
+	if msg.MediaId != "" {
+		mediaID = sql.NullString{String: msg.MediaId, Valid: true}
+	} else {
+		mediaID = sql.NullString{Valid: false}
+	}
 
-	_, err := db.Exec(queryMySQL,
+	// ChatIdGroup no está en models.Message, se asume NULL o se maneja directamente en la consulta si es necesario.
+	// Para este ejemplo, se insertará NULL para ChatIdGroup.
+
+	var responseTo sql.NullString
+	if msg.ResponseTo != "" { // Ajustar si ResponseTo es un tipo diferente
+		responseTo = sql.NullString{String: msg.ResponseTo, Valid: true}
+	} else {
+		responseTo = sql.NullString{Valid: false}
+	}
+
+	query := `INSERT INTO Message (Id, TypeMessageId, Text, MediaId, Date, StatusMessage, UserId, ChatId, ChatIdGroup, ResponseTo)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` // El 10º placeholder es para ChatIdGroup
+
+	_, err := db.Exec(query,
 		msg.Id,
 		msg.TypeMessageId,
 		msg.Text,
-		nil, // MediaId (NULL para mensajes de texto)
+		mediaID,
 		msg.Date,
 		msg.StatusMessage,
 		msg.UserId,
 		msg.ChatId,
-		nil, // ChatIdGroup (NULL para chats individuales)
-		nil, // ResponseTo (NULL por defecto)
+		nil, // ChatIdGroup se inserta como NULL
+		responseTo,
 	)
 
 	if err != nil {
-		return fmt.Errorf("error insertando mensaje: %w", err)
+		return "", fmt.Errorf("error insertando mensaje: %w", err)
 	}
 
-	return nil
+	return msg.Id, nil
 }
 
 // CreateMessageFromChatParams crea un mensaje usando parámetros de chat (fromUserID, toUserID, content)
@@ -113,14 +143,16 @@ func CreateMessageFromChatParams(db *sql.DB, fromUserID, toUserID int64, content
 		UserId:        fromUserID,
 		ChatId:        chatId,
 		Date:          time.Now().UTC(),
-		TypeMessageId: 1, // Tipo texto por defecto
-		StatusMessage: 1, // Enviado
+		TypeMessageId: 1,                 // Tipo texto por defecto
+		StatusMessage: StatusMessageSent, // Usar la constante definida
 	}
 
-	err = CreateMessage(db, msg)
+	// CreateMessage ahora devuelve (string, error)
+	msgId, err := CreateMessage(db, msg)
 	if err != nil {
 		return nil, err
 	}
+	msg.Id = msgId // Asignar el ID devuelto al struct
 
 	return msg, nil
 }
@@ -152,14 +184,20 @@ func GetAcceptedContacts(db *sql.DB, userID int64) ([]models.Contact, error) {
 
 	rows, err := db.Query(query, userID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("error consultando contactos aceptados para userID %d: %w", userID, err)
+		return nil, fmt.Errorf("error consultando contactos para userID %d: %w", userID, err)
 	}
 	defer rows.Close()
 
 	var contacts []models.Contact
 	for rows.Next() {
 		var contact models.Contact
-		if err := rows.Scan(&contact.ContactId, &contact.User1Id, &contact.User2Id, &contact.Status, &contact.ChatId); err != nil {
+		if err := rows.Scan(
+			&contact.ContactId,
+			&contact.User1Id,
+			&contact.User2Id,
+			&contact.Status,
+			&contact.ChatId,
+		); err != nil {
 			return nil, fmt.Errorf("error escaneando contacto: %w", err)
 		}
 		contacts = append(contacts, contact)

@@ -54,12 +54,6 @@ func GetUserBySessionTokenWithMetrics(db *sql.DB, token string) (*models.User, e
 	})
 }
 
-// CreateMessageWithMetrics es otro ejemplo
-func CreateMessageWithMetrics(db *sql.DB, message *models.Message) error {
-	// Aquí podrías agregar métricas como incrementar contadores, etc.
-	return CreateMessage(db, message)
-}
-
 // CreateMessageFromChatParamsWithMetrics crea un mensaje usando parámetros de chat con métricas
 func CreateMessageFromChatParamsWithMetrics(db *sql.DB, fromUserID, toUserID int64, content string) (*models.Message, error) {
 	// Aquí podrías agregar métricas como incrementar contadores, etc.

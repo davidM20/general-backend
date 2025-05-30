@@ -11,7 +11,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/models" // Alias para el paquete que contiene ChatInfo
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
-	"github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
+	customwsTypes "github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
@@ -101,62 +101,119 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 	return chatList, nil
 }
 
-// ProcessAndSaveChatMessage procesa un mensaje de chat entrante, lo guarda en la BD,
-// y envía el mensaje a destinatarios.
-func ProcessAndSaveChatMessage(fromUserID, toUserID int64, text string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*models.Message, error) {
-	logger.Infof("SERVICE_CHAT", "Procesando mensaje de chat de UserID %d a UserID %d", fromUserID, toUserID)
-
-	// Usar la variable global chatDB que ya está inicializada
+// ProcessAndSaveChatMessage se encarga de tomar los datos de un mensaje de chat entrante,
+// validarlos (parcialmente, el handler puede hacer más), guardarlos en la BD
+// y devolver el mensaje guardado para su posterior envío.
+// También busca al usuario destino y le envía el mensaje si está en línea.
+func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, messageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*models.Message, error) {
 	if chatDB == nil {
-		return nil, errors.New("chat service no inicializado con conexión a BD")
+		return nil, errors.New("servicio de chat no inicializado con conexión a BD")
+	}
+	if manager == nil {
+		return nil, errors.New("ConnectionManager no proporcionado a ProcessAndSaveChatMessage")
 	}
 
-	// Comprobar que ambos usuarios están en contactos aceptados
-	// No lo verificamos por ahora, asumimos que la aplicación frontend solo permite esto para contactos válidos.
+	// Extraer y validar campos del payload
+	chatId, ok := payload["chatId"].(string)
+	if !ok || chatId == "" {
+		return nil, errors.New("ChatId es requerido y debe ser un string")
+	}
 
-	// Nota: Si es requerido verificar que fromUserID y toUserID tienen un Contact.Status = 'accepted' entre ellos,
-	// la BD podría requerirlo si ChatMessage.ChatID es FK a Contact.ChatId y no es nullable.
-	// El DDL muestra ChatMessage.ChatId VARCHAR(255) y Contact.ChatId VARCHAR(255) UNIQUE.
-	// Y ChatMessage.ChatId FK a Contact.ChatId.
+	text, _ := payload["text"].(string) // El texto puede ser opcional si hay MediaId
+	mediaId, _ := payload["mediaId"].(string)
+	responseTo, _ := payload["responseTo"].(string)
 
-	// Crear el mensaje usando la nueva función
-	msg, err := queries.CreateMessageFromChatParams(chatDB, fromUserID, toUserID, text)
+	if text == "" && mediaId == "" { // Un mensaje debe tener texto o media
+		return nil, errors.New("el mensaje no puede estar vacío, debe contener texto o media")
+	}
+
+	// Determinar TypeMessageId basado en si hay MediaId o no.
+	var typeMessageID int64 = 1 // Por defecto, texto
+	if mediaId != "" {
+		typeMessageID = 2 // Asumimos 2 para mensajes con media. Ajusta según tu tabla TypeMessage.
+		// Podrías tener una lógica más compleja aquí, por ejemplo, leer el tipo de la tabla Multimedia.
+	}
+
+	newMessage := &models.Message{
+		Id:            messageID, // Usar el ID generado en el handler
+		ChatId:        chatId,
+		Text:          text,
+		UserId:        userID, // ID del remitente
+		Date:          time.Now().UTC(),
+		TypeMessageId: typeMessageID,
+		StatusMessage: queries.StatusMessageSent, // Estado inicial: Enviado
+		MediaId:       mediaId,                   // Puede ser string vacío
+		ResponseTo:    responseTo,                // Puede ser string vacío
+	}
+
+	// Guardar el mensaje en la base de datos
+	createdMsgID, err := queries.CreateMessage(chatDB, newMessage)
 	if err != nil {
-		return nil, fmt.Errorf("error creando mensaje en BD: %w", err)
+		logger.Errorf("SERVICE_CHAT", "Error guardando mensaje para UserID %d, ChatID %s: %v", userID, chatId, err)
+		return nil, fmt.Errorf("error guardando mensaje en DB: %w", err)
 	}
 
-	logger.Successf("SERVICE_CHAT", "Mensaje guardado en BD con ID: %s", msg.Id)
+	newMessage.Id = createdMsgID // Asegurarse de que el ID en el struct es el devuelto por la BD
 
-	// Crear payload para websocket (compatible con formato anterior)
-	payload := map[string]interface{}{
-		"id":         msg.Id,
-		"chatId":     msg.ChatId,
-		"fromUserId": msg.UserId,
-		"toUserId":   toUserID, // Nota: esto se deduce del ChatId pero lo agregamos por compatibilidad
-		"content":    msg.Text,
-		"createdAt":  msg.Date,
-		"statusId":   msg.StatusMessage,
+	logger.Infof("SERVICE_CHAT", "Mensaje guardado (ID: %s) para UserID %d en ChatID %s", createdMsgID, userID, chatId)
+
+	// --- Lógica para encontrar destinatario y enviar si está en línea ---
+
+	// 1. Obtener información del chat/contacto para identificar al destinatario
+	contact, err := queries.GetContactByChatID(chatDB, chatId)
+	if err != nil {
+		logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s después de guardar mensaje: %v", chatId, err)
+		return newMessage, fmt.Errorf("mensaje guardado pero error obteniendo datos del chat para envío: %w", err)
 	}
 
-	serverMessage := types.ServerToClientMessage{
-		PID:     manager.Callbacks().GeneratePID(),
-		Type:    types.MessageTypeNewChatMessage,
-		Payload: payload,
-	}
-
-	if manager.IsUserOnline(toUserID) {
-		errSend := manager.SendMessageToUser(toUserID, serverMessage) // SendMessageToUser devuelve un solo error
-		if errSend != nil {                                           // Comprobar si hay un error, no un mapa de errores
-			logger.Warnf("SERVICE_CHAT", "Error enviando mensaje a UserID %d: %v", toUserID, errSend)
-		}
-		logger.Infof("SERVICE_CHAT", "Mensaje (ID: %s) enviado a UserID %d (online)", msg.Id, toUserID)
-		// TODO: Actualizar estado a "delivered_to_recipient_device" (StatusID = 2)
+	// 2. Identificar al usuario destinatario
+	var recipientUserID int64
+	if userID == contact.User1Id {
+		recipientUserID = contact.User2Id
+	} else if userID == contact.User2Id {
+		recipientUserID = contact.User1Id
 	} else {
-		logger.Infof("SERVICE_CHAT", "Usuario %d no está online. Mensaje (ID: %s) guardado.", toUserID, msg.Id)
-		// TODO: Implementar notificación push si el usuario está offline
+		logger.Errorf("SERVICE_CHAT", "El remitente del mensaje (UserID %d) no coincide con los participantes del ContactID %s (User1: %d, User2: %d)", userID, contact.ContactId, contact.User1Id, contact.User2Id)
+		return newMessage, fmt.Errorf("mensaje guardado pero remitente no coincide con participantes del chat")
 	}
 
-	return msg, nil
+	// 3. Verificar si el destinatario está en línea
+	isRecipientOnline := manager.IsUserOnline(recipientUserID)
+	logger.Infof("SERVICE_CHAT", "Destinatario UserID %d para ChatID %s está en línea: %v", recipientUserID, chatId, isRecipientOnline)
+
+	// 4. Si está en línea, enviar el mensaje
+	if isRecipientOnline {
+		messageToSend := wsmodels.MessageDB{
+			Id:            newMessage.Id,
+			ChatId:        newMessage.ChatId,
+			FromUserId:    newMessage.UserId,
+			TargetUserId:  recipientUserID,
+			Text:          newMessage.Text,
+			Timestamp:     newMessage.Date.UTC().Format(time.RFC3339Nano),
+			Status:        MapStatusMessageToString(newMessage.StatusMessage),
+			TypeMessageId: newMessage.TypeMessageId,
+			MediaId:       newMessage.MediaId,
+			ResponseTo:    newMessage.ResponseTo,
+		}
+
+		// MODIFICADO: Usar types.ServerToClientMessage
+		serverMessage := customwsTypes.ServerToClientMessage{
+			Type:       customwsTypes.MessageTypeNewChatMessage,
+			FromUserID: newMessage.UserId, // El remitente original del mensaje
+			Payload:    messageToSend,     // messageToSend es wsmodels.MessageDB
+		}
+
+		err := manager.SendMessageToUser(recipientUserID, serverMessage) // <--- MODIFICADO: Pasar serverMessage
+		if err != nil {
+			logger.Errorf("SERVICE_CHAT", "Error enviando mensaje (ID: %s) a UserID %d: %v", newMessage.Id, recipientUserID, err)
+		} else {
+			logger.Successf("SERVICE_CHAT", "Mensaje (ID: %s) enviado exitosamente a UserID %d", newMessage.Id, recipientUserID)
+		}
+	} else {
+		logger.Infof("SERVICE_CHAT", "Destinatario UserID %d no está en línea, mensaje (ID: %s) guardado pero no enviado inmediatamente.", recipientUserID, newMessage.Id)
+	}
+
+	return newMessage, nil
 }
 
 // GetChatHistory recupera el historial de mensajes para un chat específico.
@@ -255,7 +312,7 @@ func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID stri
 			TargetUserId: targetUserID,
 			Text:         textSc.String, // Usar textSc.String, será "" si Text era NULL
 			Timestamp:    dbMsg.Date.UTC().Format(time.RFC3339Nano),
-			Status:       mapStatusMessageToString(dbMsg.StatusMessage),
+			Status:       MapStatusMessageToString(dbMsg.StatusMessage),
 		}
 
 		if typeMessageIdSc.Valid {
@@ -273,12 +330,37 @@ func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID stri
 		return nil, fmt.Errorf("error procesando resultados de mensajes: %w", err)
 	}
 
-	logger.Successf("SERVICE_CHAT", "Historial para ChatID %s recuperado. %d mensajes.", chatID, len(messages))
+	// Invertir el slice 'messages' para que el más antiguo de la página actual esté primero.
+	// for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+	// 	messages[i], messages[j] = messages[j], messages[i]
+	// }
+
+	logger.Successf("SERVICE_CHAT", "Historial para ChatID %s recuperado y ordenado (más antiguo primero en la página). %d mensajes.", chatID, len(messages))
 	return messages, nil
 }
 
-// mapStatusMessageToString convierte el estado int de la BD a una cadena para el cliente.
-func mapStatusMessageToString(statusInt int) string {
+// GetChatParticipants recupera los IDs de los dos participantes de un chat.
+// Retorna user1ID, user2ID, error.
+func GetChatParticipants(chatID string) (int64, int64, error) {
+	if chatDB == nil {
+		return 0, 0, errors.New("GetChatParticipants: servicio de chat no inicializado con conexión a BD")
+	}
+	contact, err := queries.GetContactByChatID(chatDB, chatID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			logger.Warnf("SERVICE_CHAT", "GetChatParticipants: No se encontró contacto para ChatID %s", chatID)
+			return 0, 0, fmt.Errorf("no se encontró chat con ID %s: %w", chatID, err)
+		}
+		logger.Errorf("SERVICE_CHAT", "GetChatParticipants: Error obteniendo contacto para ChatID %s: %v", chatID, err)
+		return 0, 0, fmt.Errorf("error obteniendo datos del chat %s: %w", chatID, err)
+	}
+	// Asumiendo que la estructura de contact tiene User1Id y User2Id
+	return contact.User1Id, contact.User2Id, nil
+}
+
+// MapStatusMessageToString convierte el estado int de la BD a una cadena para el cliente.
+// Renombrada para ser exportada.
+func MapStatusMessageToString(statusInt int) string {
 	switch statusInt {
 	case 1: // Asumiendo 1 = Enviado
 		return "sent"

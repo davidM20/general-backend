@@ -10,6 +10,7 @@ type WsUserData struct {
 	// Podríamos añadir más datos aquí si son frecuentemente necesarios
 	// y queremos evitar consultas repetidas a la BD en cada mensaje.
 	// Por ejemplo: Roles, Email.
+	// IsMyMessage   int    `json:"isMyMessage,omitempty"` // El frontend lo calcula, pero podría venir del backend
 }
 
 // ChatInfo representa la información resumida de un chat para la lista de chats del usuario.
@@ -175,7 +176,15 @@ type MessageDB struct {
 	TypeMessageId int64  `json:"typeMessageId,omitempty"`
 	MediaId       string `json:"mediaId,omitempty"`
 	// Campos que podrían ser necesarios del schema.sql y el frontend:
-	// ResponseTo    string `json:"responseTo,omitempty"`
+	ResponseTo string `json:"responseTo,omitempty"`
 	// ChatIdGroup   string `json:"chatIdGroup,omitempty"`
 	// IsMyMessage   int    `json:"isMyMessage,omitempty"` // El frontend lo calcula, pero podría venir del backend
+}
+
+// WsMessage es una estructura genérica para los mensajes WebSocket salientes.
+// Type indica el tipo de mensaje (ej: "chat_message", "notification", "user_status")
+// Payload contiene los datos específicos del mensaje.
+type WsMessage struct {
+	Type    string      `json:"type"`
+	Payload interface{} `json:"payload"`
 }
