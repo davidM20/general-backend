@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/services"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
@@ -83,7 +82,7 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 		servicePayload["typeMessageId"] = payload.TypeMessageId
 	}
 
-	savedMessage, err := services.ProcessAndSaveChatMessage(conn.ID, servicePayload, messageServerID, conn.Manager())
+	_, err = services.ProcessAndSaveChatMessage(conn.ID, servicePayload, messageServerID, conn.Manager())
 	if err != nil {
 		logger.Errorf(handlerSendChatMessageLogComponent, "Error en ProcessAndSaveChatMessage para UserID %d, PID %s: %v", conn.ID, msg.PID, err)
 		conn.SendServerAck(msg.PID, "error", err) // Enviar el error del servicio al cliente
@@ -92,49 +91,6 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 
 	logger.Successf(handlerSendChatMessageLogComponent, "Mensaje de UserID %d (ChatID: %s, PID: %s) procesado y guardado con ID de servidor: %s", conn.ID, payload.ChatId, msg.PID, messageServerID)
 	conn.SendServerAck(msg.PID, "processed", nil) // Éxito
-
-	// Enviar el mensaje guardado de vuelta al remitente para actualizar su UI.
-	var actualTargetUserID int64
-	user1ID, user2ID, participantsErr := services.GetChatParticipants(savedMessage.ChatId)
-	if participantsErr == nil {
-		if savedMessage.UserId == user1ID {
-			actualTargetUserID = user2ID
-		} else if savedMessage.UserId == user2ID {
-			actualTargetUserID = user1ID
-		} else {
-			logger.Warnf(handlerSendChatMessageLogComponent, "Remitente %d no coincide con participantes (%d, %d) del chat %s. TargetUserID para eco será 0.", savedMessage.UserId, user1ID, user2ID, savedMessage.ChatId)
-			actualTargetUserID = 0 // O conn.ID si se prefiere como fallback
-		}
-	} else {
-		logger.Warnf(handlerSendChatMessageLogComponent, "No se pudo obtener participantes para ChatID %s al enviar eco: %v. TargetUserID será 0.", savedMessage.ChatId, participantsErr)
-		actualTargetUserID = 0 // O conn.ID
-	}
-
-	messageForSenderUI := wsmodels.MessageDB{
-		Id:            savedMessage.Id,
-		ChatId:        savedMessage.ChatId,
-		FromUserId:    savedMessage.UserId,
-		TargetUserId:  actualTargetUserID,
-		Text:          savedMessage.Text,
-		Timestamp:     savedMessage.Date.UTC().Format(time.RFC3339Nano),
-		Status:        services.MapStatusMessageToString(savedMessage.StatusMessage),
-		TypeMessageId: savedMessage.TypeMessageId,
-		MediaId:       savedMessage.MediaId,
-		ResponseTo:    savedMessage.ResponseTo,
-	}
-
-	serverMessageToSender := types.ServerToClientMessage{
-		Type:       types.MessageTypeNewChatMessage,
-		FromUserID: savedMessage.UserId,
-		Payload:    messageForSenderUI,
-		PID:        conn.Manager().Callbacks().GeneratePID(),
-	}
-
-	if err := conn.SendMessage(serverMessageToSender); err != nil {
-		logger.Errorf(handlerSendChatMessageLogComponent, "Error enviando eco del mensaje (ID: %s) a UserID %d: %v", savedMessage.Id, conn.ID, err)
-	} else {
-		logger.Infof(handlerSendChatMessageLogComponent, "Eco del mensaje (ID: %s) enviado a UserID %d.", savedMessage.Id, conn.ID)
-	}
 
 	return nil
 }

@@ -37,31 +37,51 @@ func HandleUserConnect(userID int64, username string, manager *customws.Connecti
 	}
 	logger.Infof("SERVICE_PRESENCE", "User connected: ID %d, Username: %s. Processing presence update.", userID, username)
 
-	err := queries.SetUserOnlineStatus(presenceDB, userID, true)
+	// Verificar si el usuario ya está marcado como online en la BD
+	currentStatus, err := queries.GetUserOnlineStatus(presenceDB, userID)
 	if err != nil {
-		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado online para UserID %d: %v", userID, err)
-		// No devolver el error necesariamente, ya que la conexión WS ya está establecida.
-		// Pero es importante registrarlo.
+		logger.Errorf("SERVICE_PRESENCE", "Error verificando estado online para UserID %d: %v", userID, err)
+	} else if currentStatus {
+		logger.Warnf("SERVICE_PRESENCE", "UserID %d ya estaba marcado como online en la BD", userID)
 	}
 
+	// Actualizar estado a online
+	err = queries.SetUserOnlineStatus(presenceDB, userID, true)
+	if err != nil {
+		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado online para UserID %d: %v", userID, err)
+		return fmt.Errorf("error actualizando estado online: %w", err)
+	}
+
+	// Notificar a contactos
 	contactUserIDs, err := queries.GetUserContactIDs(presenceDB, userID)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error obteniendo IDs de contacto para UserID %d: %v", userID, err)
-		// Continuar incluso si no podemos notificar a los contactos
 	} else if len(contactUserIDs) > 0 {
-		presenceMsg := types.ServerToClientMessage{
-			PID:        manager.Callbacks().GeneratePID(),
-			Type:       types.MessageTypePresenceEvent,
-			FromUserID: userID,
-			Payload: map[string]interface{}{
-				"eventType": "user_online",
-				"userId":    userID,
-				"username":  username, // Podrías querer enviar más info del usuario aquí
-			},
+		// Filtrar solo los contactos que están conectados
+		var onlineContactIDs []int64
+		for _, contactID := range contactUserIDs {
+			if manager.IsUserOnline(contactID) {
+				onlineContactIDs = append(onlineContactIDs, contactID)
+			}
 		}
-		errsMap := manager.BroadcastToUsers(contactUserIDs, presenceMsg)
-		if len(errsMap) > 0 {
-			logger.Warnf("SERVICE_PRESENCE", "Errores difundiendo estado online para UserID %d a sus contactos: %v", userID, errsMap)
+
+		if len(onlineContactIDs) > 0 {
+			presenceMsg := types.ServerToClientMessage{
+				PID:        manager.Callbacks().GeneratePID(),
+				Type:       types.MessageTypePresenceEvent,
+				FromUserID: userID,
+				Payload: map[string]interface{}{
+					"eventType": "user_online",
+					"userId":    userID,
+					"username":  username,
+				},
+			}
+			errsMap := manager.BroadcastToUsers(onlineContactIDs, presenceMsg)
+			if len(errsMap) > 0 {
+				logger.Warnf("SERVICE_PRESENCE", "Errores difundiendo estado online para UserID %d a sus contactos conectados: %v", userID, errsMap)
+			}
+		} else {
+			logger.Infof("SERVICE_PRESENCE", "Ningún contacto de UserID %d está conectado para notificar", userID)
 		}
 	}
 
@@ -75,36 +95,57 @@ func HandleUserConnect(userID int64, username string, manager *customws.Connecti
 func HandleUserDisconnect(userID int64, username string, manager *customws.ConnectionManager[wsmodels.WsUserData], discErr error) {
 	if presenceDB == nil {
 		logger.Errorf("SERVICE_PRESENCE", "PresenceService no inicializado con conexión a BD para desconexión de UserID %d", userID)
-		// No podemos hacer mucho si la BD no está disponible aquí.
 		return
 	}
 	logger.Infof("SERVICE_PRESENCE", "User disconnected: ID %d, Username: %s. Error (if any): %v. Processing presence update.", userID, username, discErr)
 
-	err := queries.SetUserOnlineStatus(presenceDB, userID, false)
+	// Verificar si el usuario ya está marcado como offline en la BD
+	currentStatus, err := queries.GetUserOnlineStatus(presenceDB, userID)
+	if err != nil {
+		logger.Errorf("SERVICE_PRESENCE", "Error verificando estado online para UserID %d: %v", userID, err)
+	} else if !currentStatus {
+		logger.Warnf("SERVICE_PRESENCE", "UserID %d ya estaba marcado como offline en la BD", userID)
+	}
+
+	// Actualizar estado a offline
+	err = queries.SetUserOnlineStatus(presenceDB, userID, false)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado offline para UserID %d: %v", userID, err)
 	}
 
 	lastSeenTimestamp := time.Now().UnixMilli()
 
+	// Notificar a contactos
 	contactUserIDs, err := queries.GetUserContactIDs(presenceDB, userID)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error obteniendo IDs de contacto para UserID %d al desconectar: %v", userID, err)
 	} else if len(contactUserIDs) > 0 {
-		presenceMsg := types.ServerToClientMessage{
-			PID:        manager.Callbacks().GeneratePID(),
-			Type:       types.MessageTypePresenceEvent,
-			FromUserID: userID,
-			Payload: map[string]interface{}{
-				"eventType": "user_offline",
-				"userId":    userID,
-				"username":  username,
-				"lastSeen":  lastSeenTimestamp,
-			},
+		// Filtrar solo los contactos que están conectados
+		var onlineContactIDs []int64
+		for _, contactID := range contactUserIDs {
+			if manager.IsUserOnline(contactID) {
+				onlineContactIDs = append(onlineContactIDs, contactID)
+			}
 		}
-		errsMap := manager.BroadcastToUsers(contactUserIDs, presenceMsg)
-		if len(errsMap) > 0 {
-			logger.Warnf("SERVICE_PRESENCE", "Errores difundiendo estado offline para UserID %d a sus contactos: %v", userID, errsMap)
+
+		if len(onlineContactIDs) > 0 {
+			presenceMsg := types.ServerToClientMessage{
+				PID:        manager.Callbacks().GeneratePID(),
+				Type:       types.MessageTypePresenceEvent,
+				FromUserID: userID,
+				Payload: map[string]interface{}{
+					"eventType": "user_offline",
+					"userId":    userID,
+					"username":  username,
+					"lastSeen":  lastSeenTimestamp,
+				},
+			}
+			errsMap := manager.BroadcastToUsers(onlineContactIDs, presenceMsg)
+			if len(errsMap) > 0 {
+				logger.Warnf("SERVICE_PRESENCE", "Errores difundiendo estado offline para UserID %d a sus contactos conectados: %v", userID, errsMap)
+			}
+		} else {
+			logger.Infof("SERVICE_PRESENCE", "Ningún contacto de UserID %d está conectado para notificar su desconexión", userID)
 		}
 	}
 

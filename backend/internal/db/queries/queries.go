@@ -770,3 +770,20 @@ func GetContactByChatID(db *sql.DB, chatID string) (*models.Contact, error) {
 	}
 	return contact, nil
 }
+
+// GetUserOnlineStatus obtiene el estado online de un usuario desde la tabla Online.
+// Retorna true si el usuario está en línea (Status = 1) y false si está offline (Status = 0).
+func GetUserOnlineStatus(db *sql.DB, userID int64) (bool, error) {
+	var status int
+	query := `SELECT Status FROM Online WHERE UserOnlineId = ? LIMIT 1`
+
+	err := db.QueryRow(query, userID).Scan(&status)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil // Si no hay registro, asumimos que está offline
+		}
+		return false, fmt.Errorf("error obteniendo estado online para userID %d: %w", userID, err)
+	}
+
+	return status == 1, nil // Status 1 = online, 0 = offline
+}

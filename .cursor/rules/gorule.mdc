@@ -86,6 +86,7 @@ Al agregar nuevas funcionalidades relacionadas con chat:
 5. Documentar cambios en el flujo
 6. Implementa en los archivos todas las propuestas a menos que te indiquen que no lo hagas
 7. Cuando hagas un cambio en algun archivo pon al inicio del archivo comentarios que describan las reglas y requisitos para cada archivo
+8. Para enviar un mensaje o informacion de un usuario a otro se debe usar el metodo handlePeerToPeerMessage que existe en customws para comunicar p2p
 ```
 
 # Estructura de Action y Resource

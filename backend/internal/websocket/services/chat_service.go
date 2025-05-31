@@ -179,7 +179,25 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 
 	// 3. Verificar si el destinatario está en línea
 	isRecipientOnline := manager.IsUserOnline(recipientUserID)
-	logger.Infof("SERVICE_CHAT", "Destinatario UserID %d para ChatID %s está en línea: %v", recipientUserID, chatId, isRecipientOnline)
+
+	// Verificar también el estado en la base de datos
+	dbOnlineStatus, err := queries.GetUserOnlineStatus(chatDB, recipientUserID)
+	if err != nil {
+		logger.Warnf("SERVICE_CHAT", "Error obteniendo estado online de BD para UserID %d: %v", recipientUserID, err)
+	} else if dbOnlineStatus != isRecipientOnline {
+		// Si hay discrepancia, actualizar el estado en la BD para que coincida con el estado WebSocket
+		logger.Warnf("SERVICE_CHAT", "Desincronización detectada para UserID %d: WS=%v, DB=%v. Actualizando BD.",
+			recipientUserID, isRecipientOnline, dbOnlineStatus)
+		err = queries.SetUserOnlineStatus(chatDB, recipientUserID, isRecipientOnline)
+		if err != nil {
+			logger.Errorf("SERVICE_CHAT", "Error actualizando estado online en BD para UserID %d: %v", recipientUserID, err)
+		}
+	}
+
+	// Solo consideramos al usuario en línea si tiene una conexión WebSocket activa
+	// El estado en la BD es solo informativo
+	logger.Infof("SERVICE_CHAT", "Destinatario UserID %d para ChatID %s está en línea (WS: %v, DB: %v): %v",
+		recipientUserID, chatId, isRecipientOnline, dbOnlineStatus, isRecipientOnline)
 
 	// 4. Si está en línea, enviar el mensaje
 	if isRecipientOnline {
@@ -196,14 +214,22 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 			ResponseTo:    newMessage.ResponseTo,
 		}
 
-		// MODIFICADO: Usar types.ServerToClientMessage
 		serverMessage := customwsTypes.ServerToClientMessage{
 			Type:       customwsTypes.MessageTypeNewChatMessage,
-			FromUserID: newMessage.UserId, // El remitente original del mensaje
-			Payload:    messageToSend,     // messageToSend es wsmodels.MessageDB
+			FromUserID: newMessage.UserId,
+			Payload:    messageToSend,
+			PID:        manager.Callbacks().GeneratePID(),
 		}
 
-		err := manager.SendMessageToUser(recipientUserID, serverMessage) // <--- MODIFICADO: Pasar serverMessage
+		// Obtener la conexión del remitente
+		fromConn, found := manager.GetConnection(userID)
+		if !found {
+			logger.Errorf("SERVICE_CHAT", "No se encontró conexión para el remitente UserID %d", userID)
+			return newMessage, fmt.Errorf("error: remitente no conectado")
+		}
+
+		// Usar HandlePeerToPeerMessage para enviar el mensaje
+		err := manager.HandlePeerToPeerMessage(fromConn, recipientUserID, serverMessage)
 		if err != nil {
 			logger.Errorf("SERVICE_CHAT", "Error enviando mensaje (ID: %s) a UserID %d: %v", newMessage.Id, recipientUserID, err)
 		} else {

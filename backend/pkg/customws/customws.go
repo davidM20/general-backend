@@ -192,6 +192,14 @@ func (cm *ConnectionManager[TUserData]) ServeHTTP(w http.ResponseWriter, r *http
 		cancel:   connCancel,
 	}
 
+	// Usar el mutex para modificar userConnections
+	cm.mu.Lock()
+	if cm.userConnections == nil {
+		cm.userConnections = make(map[int64][]*Connection[TUserData])
+	}
+	cm.userConnections[userID] = append(cm.userConnections[userID], connection)
+	cm.mu.Unlock()
+
 	if oldConn, loaded := cm.connections.LoadAndDelete(userID); loaded {
 		logger.Warnf(componentLog, "UserID %d ya tenía una conexión activa. Cerrando la anterior.", userID)
 		if oldC, ok := oldConn.(*Connection[TUserData]); ok {
@@ -359,6 +367,23 @@ func (c *Connection[TUserData]) writePump() {
 func (cm *ConnectionManager[TUserData]) unregisterConnection(conn *Connection[TUserData], disconnectErr error) {
 	cm.connections.Delete(conn.ID)
 	close(conn.SendChan)
+
+	// Usar el mutex para modificar userConnections
+	cm.mu.Lock()
+	if conns, exists := cm.userConnections[conn.ID]; exists {
+		for i, c := range conns {
+			if c == conn {
+				// Eliminar esta conexión específica del slice
+				cm.userConnections[conn.ID] = append(conns[:i], conns[i+1:]...)
+				// Si el slice queda vacío, eliminar la entrada del mapa para limpiar
+				if len(cm.userConnections[conn.ID]) == 0 {
+					delete(cm.userConnections, conn.ID)
+				}
+				break // Asumiendo que una conexión solo aparece una vez por usuario
+			}
+		}
+	}
+	cm.mu.Unlock()
 
 	logger.Infof(componentLog, "Conexión para UserID %d desregistrada.", conn.ID)
 
@@ -768,4 +793,33 @@ func (cm *ConnectionManager[TUserData]) IsUserOnline(userID int64) bool {
 	defer cm.mu.RUnlock()
 	conns, exists := cm.userConnections[userID]
 	return exists && len(conns) > 0
+}
+
+// HandlePeerToPeerMessage maneja el envío de mensajes directos entre usuarios.
+// Verifica si el destinatario está en línea y envía el mensaje si es posible.
+func (cm *ConnectionManager[TUserData]) HandlePeerToPeerMessage(fromConn *Connection[TUserData], toUserID int64, msg types.ServerToClientMessage) error {
+	if fromConn == nil {
+		return errors.New("conexión de origen es nil")
+	}
+
+	// Verificar si el destinatario está en línea
+	if !cm.IsUserOnline(toUserID) {
+		return fmt.Errorf("usuario %d no está en línea", toUserID)
+	}
+
+	// Obtener la conexión del destinatario
+	toConn, found := cm.GetConnection(toUserID)
+	if !found {
+		return fmt.Errorf("no se encontró conexión para usuario %d", toUserID)
+	}
+
+	// Enviar el mensaje al destinatario
+	err := toConn.SendMessage(msg)
+	if err != nil {
+		logger.Errorf(componentLog, "Error enviando mensaje de UserID %d a UserID %d: %v", fromConn.ID, toUserID, err)
+		return fmt.Errorf("error enviando mensaje: %w", err)
+	}
+
+	logger.Infof(componentLog, "Mensaje enviado exitosamente de UserID %d a UserID %d", fromConn.ID, toUserID)
+	return nil
 }
