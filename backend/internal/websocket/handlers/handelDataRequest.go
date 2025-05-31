@@ -78,6 +78,42 @@ func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types
 
 	// 3. Dispatch based on Action and Resource combination
 	switch requestData.Action {
+	case "get_info":
+		switch requestData.Resource {
+		case "dashboard":
+			// Enviar un ACK inmediato para la solicitud original.
+			// Esto permitirá que sendDataRequest en el frontend no sufra timeout de ACK.
+			if msg.PID != "" {
+				ackPayload := types.AckPayload{AcknowledgedPID: msg.PID, Status: "processing_dashboard_info"}
+				ackMsg := types.ServerToClientMessage{
+					PID:        conn.Manager().Callbacks().GeneratePID(), // Nuevo PID para el ACK
+					Type:       types.MessageTypeServerAck,
+					FromUserID: 0, // Sistema
+					Payload:    ackPayload,
+				}
+				if err := conn.SendMessage(ackMsg); err != nil {
+					logger.Warnf("HANDLER_DATA", "Error enviando ACK para get_info/dashboard a UserID %d, PID %s: %v", conn.ID, msg.PID, err)
+					// No necesariamente retornamos este error aquí, ya que la solicitud original podría considerarse aceptada.
+					// Sin embargo, si el ACK falla, el cliente probablemente tendrá un timeout.
+				} else {
+					logger.Debugf("HANDLER_DATA", "ACK para get_info/dashboard (PID: %s) enviado a UserID %d.", msg.PID, conn.ID)
+				}
+			}
+
+			// HandleGetDashboardInfo enviará los datos del dashboard como un evento separado.
+			// Ejecutar en una goroutine para no bloquear la respuesta/ACK de esta solicitud.
+			go func(currentConn *customws.Connection[wsmodels.WsUserData], originalMsg types.ClientToServerMessage) {
+				if err := HandleGetDashboardInfo(currentConn, originalMsg); err != nil {
+					// El error ya se loguea dentro de HandleGetDashboardInfo si SendMessage falla.
+					// Podríamos añadir un log adicional aquí si es necesario.
+					logger.Errorf("HANDLER_DATA", "Error en goroutine HandleGetDashboardInfo para UserID %d, PID %s: %v", currentConn.ID, originalMsg.PID, err)
+				}
+			}(conn, msg)
+
+			return nil // Indicar que la solicitud inicial (data_request) fue aceptada y el ACK enviado.
+		default:
+			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
+		}
 	case "get_list":
 		switch requestData.Resource {
 		case "chat":

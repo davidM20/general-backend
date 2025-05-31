@@ -188,3 +188,27 @@ type WsMessage struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
 }
+
+// DashboardDataPayload representa los datos para el dashboard de administración.
+type DashboardDataPayload struct {
+	ActiveUsers          int64           `json:"activeUsers"`
+	TotalRegisteredUsers int64           `json:"totalRegisteredUsers"`
+	AdministrativeUsers  int64           `json:"administrativeUsers"`
+	BusinessAccounts     int64           `json:"businessAccounts"`
+	AlumniStudents       int64           `json:"alumniStudents"`
+	AverageUsageTime     string          `json:"averageUsageTime"` // Formato "Xh Ym" o similar
+	UsersByCampus        []UserByCampus  `json:"usersByCampus"`
+	MonthlyActivity      MonthlyActivity `json:"monthlyActivity"`
+}
+
+// UserByCampus representa el número de usuarios por campus.
+type UserByCampus struct {
+	Users int64  `json:"users"`
+	Name  string `json:"name"` // Nombre del campus
+}
+
+// MonthlyActivity representa la actividad mensual.
+type MonthlyActivity struct {
+	Labels []string `json:"labels"` // Ej: ["Ene", "Feb", "Mar"]
+	Data   []int64  `json:"data"`
+}
