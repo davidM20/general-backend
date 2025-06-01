@@ -161,6 +161,16 @@ func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types
 			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
 		}
 
+	case "mark_read":
+		switch requestData.Resource {
+		case "notification":
+			// HandleMarkNotificationRead espera subHandlerMessage.Payload (requestData.Data)
+			// que contenga { notificationId }
+			return HandleMarkNotificationRead(conn, subHandlerMessage)
+		default:
+			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
+		}
+
 	default:
 		errMsg := fmt.Sprintf("Acción '%s' no soportada.", requestData.Action)
 		logger.Warn("HANDLER_DATA", errMsg)

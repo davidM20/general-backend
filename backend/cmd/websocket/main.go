@@ -55,7 +55,6 @@ func main() {
 
 	// Inicializar servicios que dependen de la BD
 	services.InitializeChatService(dbConn)
-	services.InitializePresenceService(dbConn)
 	services.InitializeNotificationService(dbConn)
 	services.InitializeProfileService(dbConn)
 
@@ -94,6 +93,9 @@ func main() {
 
 	// Crear el ConnectionManager
 	connManager := customws.NewConnectionManager(wsConfig, callbacks)
+
+	// Inicializar PresenceService después de crear el ConnectionManager
+	services.InitializePresenceService(dbConn, connManager)
 
 	// Inicializar sistema de administración
 	adminUser := os.Getenv("ADMIN_USERNAME")

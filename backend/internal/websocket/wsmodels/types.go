@@ -31,14 +31,20 @@ type ChatInfo struct {
 // NotificationInfo representa una notificación para el usuario.
 // Se adapta a varios tipos de eventos dentro de la aplicación.
 type NotificationInfo struct {
-	ID        string      `json:"id"`                // ID único de la notificación (ej. UUID)
-	Type      string      `json:"type"`              // Tipo de notificación, ej: "contact_request", "new_message_mention", "project_invite"
-	Title     string      `json:"title"`             // Título breve de la notificación
-	Message   string      `json:"message"`           // Mensaje detallado de la notificación
-	Timestamp time.Time   `json:"timestamp"`         // Cuándo se generó la notificación
-	IsRead    bool        `json:"isRead"`            // Si el usuario ha leído esta notificación
-	Payload   interface{} `json:"payload,omitempty"` // Datos adicionales específicos del tipo de notificación (ej. FromUserID, ProjectID)
-	Profile   ProfileData `json:"profile,omitempty"` // Información del usuario que generó la notificación
+	ID             string      `json:"id"`                       // ID único del evento/notificación (proveniente de la tabla Event)
+	Type           string      `json:"type"`                     // EventType de la tabla Event (FRIEND_REQUEST, SYSTEM, etc.)
+	Title          string      `json:"title"`                    // EventTitle de la tabla Event
+	Message        string      `json:"message"`                  // Description de la tabla Event
+	Timestamp      time.Time   `json:"timestamp"`                // CreateAt de la tabla Event
+	IsRead         bool        `json:"isRead"`                   // IsRead de la tabla Event
+	Payload        interface{} `json:"payload,omitempty"`        // Metadata (parseada) de la tabla Event y otros IDs como otherUserId, projectId, groupId
+	Profile        ProfileData `json:"profile,omitempty"`        // Información del OtherUserId (si existe)
+	Status         string      `json:"status,omitempty"`         // Status de la tabla Event (PENDING, ACCEPTED, etc.)
+	ActionRequired bool        `json:"actionRequired,omitempty"` // ActionRequired de la tabla Event
+	ActionTakenAt  *time.Time  `json:"actionTakenAt,omitempty"`  // ActionTakenAt de la tabla Event (puede ser nil)
+	OtherUserId    int64       `json:"otherUserId,omitempty"`    // OtherUserId de la tabla Event (directamente)
+	ProyectId      int64       `json:"proyectId,omitempty"`      // ProyectId de la tabla Event (directamente)
+	GroupId        int64       `json:"groupId,omitempty"`        // GroupId de la tabla Event (directamente)
 }
 
 // ProfileData representa la información completa del perfil de un usuario.

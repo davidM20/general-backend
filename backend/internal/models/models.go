@@ -213,19 +213,6 @@ type Project struct {
 	ExpectedEndDate sql.NullTime `json:"expected_end_date" db:"ExpectedEndDate"` // Handle NULL
 }
 
-// Event defines the structure for the Event (notifications) table.
-type Event struct {
-	Id          int64         `json:"id" db:"Id"`
-	EventType   string        `json:"eventType" db:"EventType"`   // Nuevo campo para el tipo de evento/notificación
-	EventTitle  string        `json:"eventTitle" db:"EventTitle"` // Nuevo campo para el título del evento/notificación
-	Description string        `json:"description" db:"Description"`
-	UserId      int64         `json:"user_id" db:"UserId"`
-	OtherUserId sql.NullInt64 `json:"other_user_id" db:"OtherUserId"` // Handle NULL
-	ProyectId   sql.NullInt64 `json:"project_id" db:"ProyectId"`      // Handle NULL
-	CreateAt    time.Time     `json:"create_at" db:"CreateAt"`
-	IsRead      bool          `json:"is_read" db:"IsRead"`
-}
-
 // Enterprise defines the structure for the Enterprise table.
 type Enterprise struct {
 	Id           int64          `json:"id" db:"Id"`

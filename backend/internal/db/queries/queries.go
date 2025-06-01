@@ -2,12 +2,14 @@ package queries
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -339,7 +341,7 @@ func SetUserOnlineStatus(db *sql.DB, userID int64, isOnline bool) error {
 			// Si el usuario no estaba en la tabla Online (por ejemplo, nunca se conectó o fue purgado),
 			// no es necesariamente un error. Podríamos insertar un registro offline si la lógica lo requiriera.
 			// Por ahora, se considera que no hacer nada está bien si no hay filas afectadas.
-			// logger.Warnf("DB_QUERIES", "SetUserOnlineStatus: UserID %d no encontrado en tabla Online al intentar marcar como offline.", userID)
+			logger.Warnf("DB_QUERIES", "SetUserOnlineStatus: UserID %d no encontrado en tabla Online al intentar marcar como offline.", userID)
 		}
 	}
 	return nil
@@ -384,22 +386,27 @@ func CreateEvent(db *sql.DB, event *models.Event) error {
 	if event.CreateAt.IsZero() {
 		event.CreateAt = time.Now().UTC()
 	}
-	// Asegurarse de que IsRead sea false por defecto si no se especifica
-	// Aunque el valor por defecto de bool es false, es bueno ser explícito.
-	// event.IsRead = false // No es necesario si el struct ya lo tiene como false por defecto
 
-	query := `INSERT INTO Event (EventType, EventTitle, Description, UserId, OtherUserId, ProyectId, CreateAt, IsRead)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO Event (
+		EventType, EventTitle, Description, UserId, OtherUserId, 
+		ProyectId, CreateAt, IsRead, GroupId, Status, 
+		ActionRequired, ActionTakenAt, Metadata
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := db.Exec(query,
-		event.EventType,  // Nuevo campo
-		event.EventTitle, // Nuevo campo
+		event.EventType,
+		event.EventTitle,
 		event.Description,
 		event.UserId,
-		event.OtherUserId, // sql.NullInt64 se maneja directamente por el driver
-		event.ProyectId,   // sql.NullInt64 se maneja directamente por el driver
+		event.OtherUserId,
+		event.ProyectId,
 		event.CreateAt,
-		event.IsRead, // Nuevo campo
+		event.IsRead,
+		event.GroupId,
+		event.Status,
+		event.ActionRequired,
+		event.ActionTakenAt,
+		event.Metadata,
 	)
 	if err != nil {
 		return fmt.Errorf("error insertando evento: %w", err)
@@ -786,4 +793,219 @@ func GetUserOnlineStatus(db *sql.DB, userID int64) (bool, error) {
 	}
 
 	return status == 1, nil // Status 1 = online, 0 = offline
+}
+
+// GetEvents obtiene los eventos/notificaciones de un usuario
+func GetEvents(db *sql.DB, userId int64, onlyUnread bool, limit, offset int) ([]models.Event, error) {
+	query := `SELECT 
+		Id, EventType, EventTitle, Description, UserId, OtherUserId, 
+		ProyectId, CreateAt, IsRead, GroupId, Status, 
+		ActionRequired, ActionTakenAt, Metadata
+		FROM Event 
+		WHERE UserId = ?`
+
+	args := []interface{}{userId}
+	if onlyUnread {
+		query += " AND IsRead = false"
+	}
+	query += " ORDER BY CreateAt DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("error consultando eventos: %w", err)
+	}
+	defer rows.Close()
+
+	var events []models.Event
+	for rows.Next() {
+		var event models.Event
+		err := rows.Scan(
+			&event.Id,
+			&event.EventType,
+			&event.EventTitle,
+			&event.Description,
+			&event.UserId,
+			&event.OtherUserId,
+			&event.ProyectId,
+			&event.CreateAt,
+			&event.IsRead,
+			&event.GroupId,
+			&event.Status,
+			&event.ActionRequired,
+			&event.ActionTakenAt,
+			&event.Metadata,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error escaneando evento: %w", err)
+		}
+		events = append(events, event)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterando eventos: %w", err)
+	}
+
+	return events, nil
+}
+
+// MarkEventAsRead marca un evento como leído
+func MarkEventAsRead(db *sql.DB, eventId int64) error {
+	query := `UPDATE Event SET IsRead = true WHERE Id = ?`
+	result, err := db.Exec(query, eventId)
+	if err != nil {
+		return fmt.Errorf("error marcando evento como leído: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error obteniendo filas afectadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("no se encontró el evento con ID %d", eventId)
+	}
+
+	return nil
+}
+
+// MarkAllEventsAsRead marca todos los eventos de un usuario como leídos
+func MarkAllEventsAsRead(db *sql.DB, userId int64) (int64, error) {
+	query := `UPDATE Event SET IsRead = true WHERE UserId = ? AND IsRead = false`
+	result, err := db.Exec(query, userId)
+	if err != nil {
+		return 0, fmt.Errorf("error marcando eventos como leídos: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("error obteniendo filas afectadas: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+func MarkAllEventsAsReadForUser(db *sql.DB, userID int64) (int64, error) {
+	query := `
+		UPDATE Event
+		SET IsRead = true, ActionTakenAt = CURRENT_TIMESTAMP
+		WHERE UserId = ? AND IsRead = false;`
+
+	result, err := db.Exec(query, userID)
+	if err != nil {
+		return 0, fmt.Errorf("MarkAllEventsAsReadForUser: error al ejecutar update: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("MarkAllEventsAsReadForUser: error al obtener filas afectadas: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// UpdateEventStatus actualiza el estado de un evento y marca la acción tomada
+func UpdateEventStatus(db *sql.DB, eventId int64, status string, metadata interface{}) error {
+	query := `UPDATE Event 
+		SET Status = ?, 
+			ActionRequired = false, 
+			ActionTakenAt = CURRENT_TIMESTAMP,
+			Metadata = ?
+		WHERE Id = ?`
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("error serializando metadata: %w", err)
+	}
+
+	result, err := db.Exec(query, status, metadataJSON, eventId)
+	if err != nil {
+		return fmt.Errorf("error actualizando estado del evento: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error obteniendo filas afectadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("no se encontró el evento con ID %d", eventId)
+	}
+
+	return nil
+}
+
+// GetEventsByUserID recupera los eventos para un usuario específico con paginación y filtro opcional de no leídos.
+func GetEventsByUserID(db *sql.DB, userID int64, onlyUnread bool, limit int, offset int) ([]models.Event, error) {
+	var args []interface{}
+	query := `
+		SELECT Id, EventType, EventTitle, Description, UserId, OtherUserId, ProyectId, CreateAt, IsRead, GroupId, Status, ActionRequired, ActionTakenAt, Metadata
+		FROM Event
+		WHERE UserId = ?`
+	args = append(args, userID)
+
+	if onlyUnread {
+		query += " AND IsRead = false"
+	}
+
+	query += " ORDER BY CreateAt DESC" // Ordenar por más reciente primero
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+	if offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, offset)
+	}
+	query += ";"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("GetEventsByUserID: error en db.Query: %w", err)
+	}
+	defer rows.Close()
+
+	var events []models.Event
+	for rows.Next() {
+		var event models.Event
+		var metadataScanValue []byte // Usar []byte para escanear Metadata
+
+		err := rows.Scan(
+			&event.Id,
+			&event.EventType,
+			&event.EventTitle,
+			&event.Description,
+			&event.UserId,
+			&event.OtherUserId,
+			&event.ProyectId,
+			&event.CreateAt,
+			&event.IsRead,
+			&event.GroupId,
+			&event.Status,
+			&event.ActionRequired,
+			&event.ActionTakenAt,
+			&metadataScanValue, // Escanear en el []byte
+		)
+		if err != nil {
+			// Loguear el error y continuar podría ser una opción si una fila corrupta no debe detener todo
+			return nil, fmt.Errorf("GetEventsByUserID: error en rows.Scan: %w", err)
+		}
+
+		if metadataScanValue != nil {
+			event.Metadata = json.RawMessage(metadataScanValue)
+		} else {
+			// Si es NULL en la BD, event.Metadata será nil, lo cual es correcto para json.RawMessage
+			// o puedes asignarle un JSON vacío si prefieres: event.Metadata = json.RawMessage("null") o json.RawMessage("{}")
+			event.Metadata = nil
+		}
+
+		events = append(events, event)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("GetEventsByUserID: error en rows.Err: %w", err)
+	}
+
+	return events, nil
 }

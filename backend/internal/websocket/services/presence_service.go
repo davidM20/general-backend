@@ -1,3 +1,30 @@
+/*
+TODO: Objetivo del PresenceService
+
+El PresenceService es responsable de gestionar el estado de presencia de los usuarios en el sistema, incluyendo:
+
+1. Estado de Conexión:
+   - Detección de usuarios online/offline
+   - Manejo de conexiones WebSocket activas
+   - Tracking de última actividad
+
+2. Notificaciones de Estado:
+   - Broadcast de cambios de estado a contactos
+   - Notificaciones de última vez visto
+   - Actualizaciones de estado en tiempo real
+
+3. Características Principales:
+   - Persistencia de estado en base de datos
+   - Manejo de conexiones concurrentes
+   - Sistema de heartbeat para detectar desconexiones
+   - Notificaciones en tiempo real a contactos
+
+4. Integración:
+   - Se integra con el WebSocketManager para gestión de conexiones
+   - Utiliza el sistema de queries para persistencia
+   - Proporciona API para otros servicios que necesiten verificar presencia
+*/
+
 package services
 
 import (
@@ -12,7 +39,10 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
-var presenceDB *sql.DB // Usar una variable de BD específica para este servicio si es necesario o usar una global del paquete
+var (
+	presenceDB      *sql.DB
+	presenceManager *customws.ConnectionManager[wsmodels.WsUserData]
+)
 
 // InitializePresenceService permite inyectar la dependencia de la base de datos.
 // Esta función debería ser llamada desde main.go si este servicio requiere su propia inicialización.
@@ -22,8 +52,9 @@ var presenceDB *sql.DB // Usar una variable de BD específica para este servicio
 // O mejor aún, pasamos el db a las funciones Handle directamente si no hay estado en el servicio.
 // Por consistencia con InitializeChatService, haré una función de inicialización.
 
-func InitializePresenceService(database *sql.DB) {
+func InitializePresenceService(database *sql.DB, manager *customws.ConnectionManager[wsmodels.WsUserData]) {
 	presenceDB = database
+	presenceManager = manager
 	logger.Info("SERVICE_PRESENCE", "PresenceService inicializado con conexión a BD.")
 }
 
@@ -31,22 +62,14 @@ func InitializePresenceService(database *sql.DB) {
 // Debería actualizar el estado del usuario a 'online' en la base de datos
 // y potencialmente notificar a los contactos del usuario.
 func HandleUserConnect(userID int64, username string, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
-	if presenceDB == nil {
-		logger.Error("SERVICE_PRESENCE", "PresenceService no inicializado con conexión a BD")
+	if presenceDB == nil || presenceManager == nil {
+		logger.Error("SERVICE_PRESENCE", "PresenceService no inicializado correctamente")
 		return fmt.Errorf("PresenceService no inicializado")
 	}
 	logger.Infof("SERVICE_PRESENCE", "User connected: ID %d, Username: %s. Processing presence update.", userID, username)
 
-	// Verificar si el usuario ya está marcado como online en la BD
-	currentStatus, err := queries.GetUserOnlineStatus(presenceDB, userID)
-	if err != nil {
-		logger.Errorf("SERVICE_PRESENCE", "Error verificando estado online para UserID %d: %v", userID, err)
-	} else if currentStatus {
-		logger.Warnf("SERVICE_PRESENCE", "UserID %d ya estaba marcado como online en la BD", userID)
-	}
-
 	// Actualizar estado a online
-	err = queries.SetUserOnlineStatus(presenceDB, userID, true)
+	err := queries.SetUserOnlineStatus(presenceDB, userID, true)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado online para UserID %d: %v", userID, err)
 		return fmt.Errorf("error actualizando estado online: %w", err)
@@ -93,22 +116,14 @@ func HandleUserConnect(userID int64, username string, manager *customws.Connecti
 // Debería actualizar el estado del usuario a 'offline' en la base de datos
 // y potencialmente notificar a los contactos del usuario.
 func HandleUserDisconnect(userID int64, username string, manager *customws.ConnectionManager[wsmodels.WsUserData], discErr error) {
-	if presenceDB == nil {
-		logger.Errorf("SERVICE_PRESENCE", "PresenceService no inicializado con conexión a BD para desconexión de UserID %d", userID)
+	if presenceDB == nil || presenceManager == nil {
+		logger.Errorf("SERVICE_PRESENCE", "PresenceService no inicializado correctamente para desconexión de UserID %d", userID)
 		return
 	}
 	logger.Infof("SERVICE_PRESENCE", "User disconnected: ID %d, Username: %s. Error (if any): %v. Processing presence update.", userID, username, discErr)
 
-	// Verificar si el usuario ya está marcado como offline en la BD
-	currentStatus, err := queries.GetUserOnlineStatus(presenceDB, userID)
-	if err != nil {
-		logger.Errorf("SERVICE_PRESENCE", "Error verificando estado online para UserID %d: %v", userID, err)
-	} else if !currentStatus {
-		logger.Warnf("SERVICE_PRESENCE", "UserID %d ya estaba marcado como offline en la BD", userID)
-	}
-
 	// Actualizar estado a offline
-	err = queries.SetUserOnlineStatus(presenceDB, userID, false)
+	err := queries.SetUserOnlineStatus(presenceDB, userID, false)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado offline para UserID %d: %v", userID, err)
 	}
@@ -150,4 +165,26 @@ func HandleUserDisconnect(userID int64, username string, manager *customws.Conne
 	}
 
 	logger.Successf("SERVICE_PRESENCE", "Actualización de presencia para desconexión de usuario %d (%s) manejada. Desconnect error: %v", userID, username, discErr)
+}
+
+// GetConnection obtiene la conexión WebSocket de un usuario específico
+func GetConnection(userID int64) (*customws.Connection[wsmodels.WsUserData], bool) {
+	if presenceDB == nil || presenceManager == nil {
+		logger.Error("SERVICE_PRESENCE", "PresenceService no inicializado correctamente")
+		return nil, false
+	}
+
+	// Verificar si el usuario está online
+	isOnline, err := queries.GetUserOnlineStatus(presenceDB, userID)
+	if err != nil {
+		logger.Errorf("SERVICE_PRESENCE", "Error verificando estado online para UserID %d: %v", userID, err)
+		return nil, false
+	}
+
+	if !isOnline {
+		return nil, false
+	}
+
+	// Obtener la conexión del usuario desde el manager
+	return presenceManager.GetConnection(userID)
 }
