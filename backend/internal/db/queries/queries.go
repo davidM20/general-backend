@@ -13,6 +13,13 @@ import (
 	"github.com/google/uuid"
 )
 
+var db *sql.DB
+
+// InitDB inicializa la conexión a la base de datos
+func InitDB(database *sql.DB) {
+	db = database
+}
+
 const (
 	StatusMessageSent       = 1
 	StatusMessageDelivered  = 2
@@ -1008,4 +1015,137 @@ func GetEventsByUserID(db *sql.DB, userID int64, onlyUnread bool, limit int, off
 	}
 
 	return events, nil
+}
+
+// UpdateContactStatus actualiza el estado de un contacto entre dos usuarios.
+func UpdateContactStatus(userID, otherUserID int64, status string, timestamp string) error {
+	query := `
+		UPDATE Contact 
+		SET Status = ?, 
+			UpdatedAt = ? 
+		WHERE (User1Id = ? AND User2Id = ?) 
+		   OR (User1Id = ? AND User2Id = ?)`
+
+	updatedAt, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return fmt.Errorf("error parseando timestamp: %w", err)
+	}
+
+	result, err := db.Exec(query, status, updatedAt, userID, otherUserID, otherUserID, userID)
+	if err != nil {
+		return fmt.Errorf("error actualizando estado del contacto: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error obteniendo filas afectadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("no se encontró el contacto entre los usuarios %d y %d", userID, otherUserID)
+	}
+
+	logger.Infof("QUERY_CONTACT", "Estado de contacto actualizado para usuarios %d y %d a '%s'", userID, otherUserID, status)
+	return nil
+}
+
+// UpdateContactChatId actualiza el chatId de un contacto entre dos usuarios.
+func UpdateContactChatId(userID, otherUserID int64, chatId string) error {
+	query := `
+		UPDATE Contact 
+		SET ChatId = ?, 
+			UpdatedAt = ? 
+		WHERE (User1Id = ? AND User2Id = ?) 
+		   OR (User1Id = ? AND User2Id = ?)`
+
+	updatedAt := time.Now()
+
+	result, err := db.Exec(query, chatId, updatedAt, userID, otherUserID, otherUserID, userID)
+	if err != nil {
+		return fmt.Errorf("error actualizando chatId del contacto: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error obteniendo filas afectadas: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("no se encontró el contacto entre los usuarios %d y %d", userID, otherUserID)
+	}
+
+	logger.Infof("QUERY_CONTACT", "ChatId actualizado para contacto entre usuarios %d y %d", userID, otherUserID)
+	return nil
+}
+
+// CreateChat crea un nuevo chat entre dos usuarios y retorna su ID.
+func CreateChat(userID, otherUserID int64) (string, error) {
+	query := `
+		INSERT INTO Chat (Type, CreatedAt, UpdatedAt)
+		VALUES ('direct', ?, ?)
+		RETURNING ChatId`
+
+	now := time.Now()
+	var chatId string
+
+	err := db.QueryRow(query, now, now).Scan(&chatId)
+	if err != nil {
+		return "", fmt.Errorf("error creando chat: %w", err)
+	}
+
+	// Agregar usuarios al chat
+	participantsQuery := `
+		INSERT INTO ChatParticipant (ChatId, UserId, CreatedAt, UpdatedAt)
+		VALUES (?, ?, ?, ?), (?, ?, ?, ?)`
+
+	_, err = db.Exec(participantsQuery,
+		chatId, userID, now, now,
+		chatId, otherUserID, now, now)
+	if err != nil {
+		return "", fmt.Errorf("error agregando participantes al chat: %w", err)
+	}
+
+	logger.Infof("QUERY_CONTACT", "Chat creado entre usuarios %d y %d con ID %s", userID, otherUserID, chatId)
+	return chatId, nil
+}
+
+// GetNotificationById obtiene una notificación por su ID.
+func GetNotificationById(notificationId string) (*models.Notification, error) {
+	query := `
+		SELECT NotificationId, UserId, Type, Title, Message, 
+			   IsRead, CreatedAt, UpdatedAt, OtherUserId,
+			   ActionRequired, Status, ActionTakenAt
+		FROM Notification
+		WHERE NotificationId = ?`
+
+	var notification models.Notification
+	var actionTakenAt sql.NullTime
+
+	err := db.QueryRow(query, notificationId).Scan(
+		&notification.NotificationId,
+		&notification.UserId,
+		&notification.Type,
+		&notification.Title,
+		&notification.Message,
+		&notification.IsRead,
+		&notification.CreatedAt,
+		&notification.UpdatedAt,
+		&notification.OtherUserId,
+		&notification.ActionRequired,
+		&notification.Status,
+		&actionTakenAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo notificación: %w", err)
+	}
+
+	if actionTakenAt.Valid {
+		notification.ActionTakenAt = &actionTakenAt.Time
+	}
+
+	return &notification, nil
 }

@@ -75,6 +75,14 @@ const (
 	MessageTypeContactRequestReceived   MessageType = "contact_request_received"
 	MessageTypeContactRequestResponded  MessageType = "contact_request_responded"
 	MessageTypeContactStatusChanged     MessageType = "contact_status_changed" // Ej: amigo añadido, eliminado
+
+	// --- Mensajes del Cliente al Servidor ---
+	MessageTypeAcceptFriendRequest MessageType = "accept_request"
+	MessageTypeRejectFriendRequest MessageType = "reject_request"
+
+	// --- Mensajes del Servidor al Cliente ---
+	MessageTypeNewMessage  MessageType = "new_message"
+	MessageTypeProfileData MessageType = "profile_data"
 )
 
 // ClientToServerMessage es la estructura para mensajes enviados por el cliente al servidor.
@@ -82,7 +90,7 @@ type ClientToServerMessage struct {
 	PID          string      `json:"pid,omitempty"`          // ID de Proceso/Petición, opcional para el cliente, pero útil para rastrear o si el cliente espera un ServerAck específico.
 	Type         MessageType `json:"type"`                   // Tipo de mensaje para enrutamiento en el servidor.
 	TargetUserID int64       `json:"targetUserId,omitempty"` // Para mensajes directos (ej. en comunicación peer-to-peer).
-	Payload      interface{} `json:"payload"`                // Contenido del mensaje, puede ser cualquier struct JSON.
+	Payload      interface{} `json:"payload,omitempty"`      // Contenido del mensaje, puede ser cualquier struct JSON.
 }
 
 // ServerToClientMessage es la estructura para mensajes enviados por el servidor al cliente.
@@ -90,22 +98,22 @@ type ServerToClientMessage struct {
 	PID        string        `json:"pid,omitempty"` // ID de Proceso/Petición, para que el cliente pueda correlacionar respuestas o confirmar con un ClientAck.
 	Type       MessageType   `json:"type"`
 	FromUserID int64         `json:"fromUserId,omitempty"` // Quién originó el mensaje (ej. en comunicación peer-to-peer).
-	Payload    interface{}   `json:"payload"`
+	Payload    interface{}   `json:"payload,omitempty"`
 	Error      *ErrorPayload `json:"error,omitempty"` // Para reportar errores específicos de la operación.
 }
 
 // ErrorPayload define la estructura para errores.
 type ErrorPayload struct {
 	OriginalPID string `json:"originalPid,omitempty"` // PID del mensaje que causó el error, si aplica.
-	Code        int    `json:"code,omitempty"`        // Código de error interno o HTTP status-like.
+	Code        int    `json:"code"`                  // Código de error interno o HTTP status-like.
 	Message     string `json:"message"`               // Mensaje de error legible.
 }
 
 // AckPayload es un payload común para mensajes de tipo ack (tanto ClientAck como ServerAck).
 type AckPayload struct {
-	AcknowledgedPID string `json:"acknowledgedPid"`  // PID del mensaje que se está confirmando.
-	Status          string `json:"status,omitempty"` // Ej: "received", "processed", "read".
-	Error           string `json:"error,omitempty"`  // Si el procesamiento del mensaje original falló.
+	AcknowledgedPID string `json:"acknowledgedPid"` // PID del mensaje que se está confirmando.
+	Status          string `json:"status"`
+	Error           string `json:"error"` // Ej: "received", "processed", "read".
 }
 
 // PresenceUpdatePayload es un ejemplo para MessageTypePresenceUpdate.
