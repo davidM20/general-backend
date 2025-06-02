@@ -12,169 +12,273 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
-// HandleDataRequest maneja solicitudes de datos genéricas y las redirecciona a los handlers específicos
+/*
+REGLAS Y GUÍA PARA MODIFICAR EL ROUTER DE MENSAJES WEBSOCKET
+
+1. ESTRUCTURA DE MENSAJES:
+   - Cada mensaje debe tener un 'resource' y una 'action'
+   - El payload debe seguir la estructura DataRequestPayload
+   - Los recursos y acciones deben ser descriptivos y en minúsculas
+
+2. AGREGAR NUEVOS RECURSOS:
+   - Agregar el nuevo recurso en actionHandlers
+   - Crear un handler específico para el recurso
+   - Seguir el patrón de manejo de errores existente
+   - Documentar el nuevo recurso en los comentarios
+
+3. AGREGAR NUEVAS ACCIONES:
+   - Agregar la acción bajo el recurso correspondiente en actionHandlers
+   - Crear un handler específico si es necesario
+   - Mantener la consistencia en el manejo de errores
+
+4. MANEJO DE ERRORES:
+   - Usar los tipos de error definidos
+   - Incluir mensajes descriptivos
+   - Registrar errores usando el logger
+   - Notificar al cliente cuando sea necesario
+
+5. CONVENCIÓN DE NOMBRES:
+   - Handlers: handle[Resource][Action]
+   - Funciones de utilidad: verbos descriptivos
+   - Variables: camelCase
+   - Constantes: UPPER_CASE
+
+6. DOCUMENTACIÓN:
+   - Documentar cada nuevo recurso y sus acciones
+   - Explicar el propósito de cada handler
+   - Mantener actualizada esta guía
+
+7. RECURSOS DISPONIBLES:
+   - chat:
+     * get_list: Lista de chats
+     * get_history: Historial de chat
+     * send_message: Envío de mensajes
+   - notification:
+     * get_list: Lista de notificaciones
+     * get_pending: Notificaciones pendientes
+     * mark_read: Marcar notificaciones como leídas
+   - dashboard:
+     * get_info: Información del panel de control
+   - friend:
+     * accept_request: Aceptar solicitud de amistad
+     * reject_request: Rechazar solicitud de amistad
+
+8. ESTRUCTURA DE PAYLOAD:
+   - Para chat/get_history:
+     {
+       "chatID": string,
+       "limit": number,
+       "beforeMessageId": string (opcional)
+     }
+   - Para chat/send_message:
+     {
+       "text": string,
+       "chatID": string,
+       "timestamp": string
+     }
+   - Para notification/mark_read:
+     {
+       "notificationId": string,
+       "timestamp": string
+     }
+   - Para friend/accept_request y friend/reject_request:
+     {
+       "notificationId": string,
+       "timestamp": string
+     }
+*/
+
+// DataRequestPayload define la estructura esperada para los mensajes de data_request
+type DataRequestPayload struct {
+	Action   string                 `json:"action"`             // Acción a realizar (ej: "get_list", "send_message")
+	Resource string                 `json:"resource,omitempty"` // Recurso específico (ej: "chat", "notification")
+	Data     map[string]interface{} `json:"data,omitempty"`     // Datos específicos para la acción/recurso
+}
+
+// ResourceHandler define la interfaz para los manejadores de recursos
+type ResourceHandler func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error
+
+// actionHandlers mapea las acciones y recursos a sus respectivos handlers
+var actionHandlers = map[string]map[string]ResourceHandler{
+	// Chat: Manejo de mensajes y listas de chat
+	"chat": {
+		"get_list": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleGetChatList(conn, msg)
+		},
+		"get_history": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleGetChatHistory(conn, subHandlerMessage)
+		},
+		"send_message": handleSendChatMessage,
+	},
+	// Notification: Manejo de notificaciones
+	"notification": {
+		"get_list": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleGetNotifications(conn, msg)
+		},
+		"get_pending": handlePendingNotifications,
+		"mark_read": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleMarkNotificationRead(conn, msg)
+		},
+	},
+	// Dashboard: Información del panel de control
+	"dashboard": {
+		"get_info": handleDashboardInfo,
+	},
+	// Friend: Manejo de solicitudes de amistad
+	"friend": {
+		"accept_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleAcceptFriendRequest(conn, msg)
+		},
+		"reject_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleRejectFriendRequest(conn, msg)
+		},
+	},
+}
+
+// HandleDataRequest es el punto de entrada principal para procesar mensajes de data_request.
+// Valida y procesa los mensajes entrantes, redirigiendo a los handlers específicos según la acción y recurso.
 func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("HANDLER_DATA", "Data request recibida de UserID %d. PID: %s", conn.ID, msg.PID)
 
-	// Define the expected structure of the "data_request" payload
-	type DataRequestPayload struct {
-		Action   string                 `json:"action"`
-		Resource string                 `json:"resource,omitempty"` // Resource might be optional for actions like "ping"
-		Data     map[string]interface{} `json:"data,omitempty"`     // Specific data for the action/resource
+	requestData, err := parseRequestPayload(msg)
+	if err != nil {
+		return err
+	}
+	if requestData.Action == "ping" {
+		return handlePing(conn, msg)
 	}
 
-	var requestData DataRequestPayload
+	if requestData.Resource == "" {
+		return handleMissingResource(conn, msg.PID, requestData.Action)
+	}
 
-	// The original msg.Payload is expected to be the DataRequestPayload
+	handler, exists := getHandler(requestData.Resource, requestData.Action)
+	if !exists {
+		return handleUnsupportedResource(conn, msg.PID, requestData.Resource, requestData.Action)
+	}
+
+	return handler(conn, msg, requestData)
+}
+
+// parseRequestPayload convierte el payload del mensaje en una estructura DataRequestPayload.
+// Maneja los errores de marshalling y unmarshalling.
+func parseRequestPayload(msg types.ClientToServerMessage) (DataRequestPayload, error) {
+	var requestData DataRequestPayload
 	payloadBytes, err := json.Marshal(msg.Payload)
 	if err != nil {
-		conn.SendErrorNotification(msg.PID, 400, "Error interno procesando payload (marshal): "+err.Error())
-		return fmt.Errorf("error marshalling data_request payload: %w", err)
+		return requestData, fmt.Errorf("error marshalling data_request payload: %w", err)
 	}
 	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
-		conn.SendErrorNotification(msg.PID, 400, "Error decodificando payload de data_request (unmarshal): "+err.Error())
-		return fmt.Errorf("error unmarshalling data_request payload: %w", err)
+		return requestData, fmt.Errorf("error unmarshalling data_request payload: %w", err)
 	}
+	return requestData, nil
+}
 
-	logger.Debugf("HANDLER_DATA", "Procesando data_request: action='%s', resource='%s'", requestData.Action, requestData.Resource)
-
-	// --- Action Dispatching ---
-
-	// 1. Handle "ping" action (simple, no resource needed)
-	if requestData.Action == "ping" {
-		logger.Debugf("HANDLER_DATA", "Ping recibido de UserID %d", conn.ID)
-		if msg.PID != "" {
-			ackPayload := types.AckPayload{AcknowledgedPID: msg.PID, Status: "pong"}
-			ackMsg := types.ServerToClientMessage{
-				PID:        conn.Manager().Callbacks().GeneratePID(),
-				Type:       types.MessageTypeServerAck,
-				FromUserID: conn.ID,
-				Payload:    ackPayload,
-			}
-			if err := conn.SendMessage(ackMsg); err != nil {
-				logger.Warnf("HANDLER_DATA", "Error enviando pong (ServerAck) a UserID %d: %v", conn.ID, err)
-			} else {
-				logger.Debugf("HANDLER_DATA", "Pong enviado a UserID %d para PID %s", conn.ID, msg.PID)
-			}
-		}
+// handlePing maneja las solicitudes de ping, enviando una respuesta pong.
+// Si no hay PID, retorna silenciosamente.
+func handlePing(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
+	if msg.PID == "" {
 		return nil
 	}
 
-	// 2. For other actions, a resource is typically required.
-	if requestData.Resource == "" {
-		errMsg := fmt.Sprintf("Recurso no especificado para la acción '%s'", requestData.Action)
-		logger.Warn("HANDLER_DATA", errMsg)
-		conn.SendErrorNotification(msg.PID, 400, errMsg)
-		return errors.New(errMsg)
+	ackPayload := types.AckPayload{AcknowledgedPID: msg.PID, Status: "pong"}
+	ackMsg := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       types.MessageTypeServerAck,
+		FromUserID: conn.ID,
+		Payload:    ackPayload,
 	}
 
-	// Prepare a message for the sub-handler.
-	// It carries the original PID (for ACKs) and the specific `requestData.Data` as its payload.
-	// The Type can be preserved or updated if the sub-handler expects a specific one.
+	if err := conn.SendMessage(ackMsg); err != nil {
+		logger.Warnf("HANDLER_DATA", "Error enviando pong (ServerAck) a UserID %d: %v", conn.ID, err)
+		return err
+	}
+
+	logger.Debugf("HANDLER_DATA", "Pong enviado a UserID %d para PID %s", conn.ID, msg.PID)
+	return nil
+}
+
+// handleDashboardInfo procesa las solicitudes de información del dashboard.
+// Envía un ACK inmediato y procesa la solicitud en una goroutine separada.
+func handleDashboardInfo(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	if msg.PID != "" {
+		if err := sendProcessingAck(conn, msg.PID, "processing_dashboard_info"); err != nil {
+			logger.Warnf("HANDLER_DATA", "Error enviando ACK para get_info/dashboard a UserID %d, PID %s: %v", conn.ID, msg.PID, err)
+		}
+	}
+
+	go func(currentConn *customws.Connection[wsmodels.WsUserData], originalMsg types.ClientToServerMessage) {
+		if err := handlers.HandleGetDashboardInfo(currentConn, originalMsg); err != nil {
+			logger.Errorf("HANDLER_DATA", "Error en goroutine HandleGetDashboardInfo para UserID %d, PID %s: %v", currentConn.ID, originalMsg.PID, err)
+		}
+	}(conn, msg)
+
+	return nil
+}
+
+// handlePendingNotifications procesa las solicitudes de notificaciones pendientes.
+// Agrega el flag onlyUnread al payload antes de procesar.
+func handlePendingNotifications(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	pendingData := requestData.Data
+	if pendingData == nil {
+		pendingData = make(map[string]interface{})
+	}
+	pendingData["onlyUnread"] = true
+
 	subHandlerMessage := types.ClientToServerMessage{
-		PID:     msg.PID,          // Preserve original PID for ACK traceability
-		Type:    msg.Type,         // Preserve original type, or modify below if needed
-		Payload: requestData.Data, // The specific data for the sub-handler
+		PID:     msg.PID,
+		Type:    msg.Type,
+		Payload: pendingData,
 	}
 
-	// 3. Dispatch based on Action and Resource combination
-	switch requestData.Action {
-	case "dashboard":
-		switch requestData.Resource {
-		case "get_info":
-			// Enviar un ACK inmediato para la solicitud original.
-			// Esto permitirá que sendDataRequest en el frontend no sufra timeout de ACK.
-			if msg.PID != "" {
-				ackPayload := types.AckPayload{AcknowledgedPID: msg.PID, Status: "processing_dashboard_info"}
-				ackMsg := types.ServerToClientMessage{
-					PID:        conn.Manager().Callbacks().GeneratePID(), // Nuevo PID para el ACK
-					Type:       types.MessageTypeServerAck,
-					FromUserID: 0, // Sistema
-					Payload:    ackPayload,
-				}
-				if err := conn.SendMessage(ackMsg); err != nil {
-					logger.Warnf("HANDLER_DATA", "Error enviando ACK para get_info/dashboard a UserID %d, PID %s: %v", conn.ID, msg.PID, err)
-					// No necesariamente retornamos este error aquí, ya que la solicitud original podría considerarse aceptada.
-					// Sin embargo, si el ACK falla, el cliente probablemente tendrá un timeout.
-				} else {
-					logger.Debugf("HANDLER_DATA", "ACK para get_info/dashboard (PID: %s) enviado a UserID %d.", msg.PID, conn.ID)
-				}
-			}
+	return handlers.HandleGetNotifications(conn, subHandlerMessage)
+}
 
-			// HandleGetDashboardInfo enviará los datos del dashboard como un evento separado.
-			// Ejecutar en una goroutine para no bloquear la respuesta/ACK de esta solicitud.
-			go func(currentConn *customws.Connection[wsmodels.WsUserData], originalMsg types.ClientToServerMessage) {
-				if err := handlers.HandleGetDashboardInfo(currentConn, originalMsg); err != nil {
-					// El error ya se loguea dentro de HandleGetDashboardInfo si SendMessage falla.
-					// Podríamos añadir un log adicional aquí si es necesario.
-					logger.Errorf("HANDLER_DATA", "Error en goroutine HandleGetDashboardInfo para UserID %d, PID %s: %v", currentConn.ID, originalMsg.PID, err)
-				}
-			}(conn, msg)
-
-			return nil // Indicar que la solicitud inicial (data_request) fue aceptada y el ACK enviado.
-		default:
-			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
-		}
-	case "get_list":
-		switch requestData.Resource {
-		case "chat":
-			return handlers.HandleGetChatList(conn, msg)
-		case "notification":
-			return handlers.HandleGetNotifications(conn, subHandlerMessage)
-		default:
-			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
-		}
-
-	case "get_pending":
-		switch requestData.Resource {
-		case "notification":
-			// For "get_pending" notifications, we inject "onlyUnread: true" into the data.
-			pendingData := requestData.Data
-			if pendingData == nil {
-				pendingData = make(map[string]interface{})
-			}
-			pendingData["onlyUnread"] = true
-			subHandlerMessage.Payload = pendingData // Update payload with the modified data
-			return handlers.HandleGetNotifications(conn, subHandlerMessage)
-		default:
-			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
-		}
-
-	case "get_history":
-		switch requestData.Resource {
-		case "chat":
-			// HandleGetChatHistory expects subHandlerMessage.Payload (requestData.Data)
-			// to contain {chatId, limit, beforeMessageId}
-			return handlers.HandleGetChatHistory(conn, subHandlerMessage)
-		default:
-			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
-		}
-
-	case "send_message":
-		switch requestData.Resource {
-		case "chat":
-			// HandleSendChatMessage expects subHandlerMessage.Payload (requestData.Data)
-			// to contain the message content (e.g., {chatId, text})
-			// The original code set a specific message type.
-			subHandlerMessage.Type = types.MessageTypeSendChatMessage
-			return handlers.HandleSendChatMessage(conn, subHandlerMessage)
-		default:
-			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
-		}
-
-	case "mark_read":
-		switch requestData.Resource {
-		case "notification":
-
-			return handlers.HandleMarkNotificationRead(conn, subHandlerMessage)
-		default:
-			return handleUnsupportedResource(conn, msg.PID, requestData.Action, requestData.Resource)
-		}
-
-	default:
-		errMsg := fmt.Sprintf("Acción '%s' no soportada.", requestData.Action)
-		logger.Warn("HANDLER_DATA", errMsg)
-		conn.SendErrorNotification(msg.PID, 400, errMsg)
-		return errors.New(errMsg)
+// handleSendChatMessage procesa el envío de mensajes de chat.
+// Configura el tipo de mensaje específico para chat antes de procesar.
+func handleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	subHandlerMessage := types.ClientToServerMessage{
+		PID:     msg.PID,
+		Type:    types.MessageTypeSendChatMessage,
+		Payload: requestData.Data,
 	}
+	return handlers.HandleSendChatMessage(conn, subHandlerMessage)
+}
+
+// sendProcessingAck envía un ACK de procesamiento al cliente.
+// Utilizado para notificar que una solicitud está siendo procesada.
+func sendProcessingAck(conn *customws.Connection[wsmodels.WsUserData], pid string, status string) error {
+	ackPayload := types.AckPayload{AcknowledgedPID: pid, Status: status}
+	ackMsg := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       types.MessageTypeServerAck,
+		FromUserID: 0,
+		Payload:    ackPayload,
+	}
+	return conn.SendMessage(ackMsg)
+}
+
+// getHandler busca el handler correspondiente para una acción y recurso específicos.
+// Retorna el handler y un booleano indicando si se encontró.
+func getHandler(resource, action string) (ResourceHandler, bool) {
+	if resources, exists := actionHandlers[resource]; exists {
+		if handler, exists := resources[action]; exists {
+			return handler, true
+		}
+	}
+	return nil, false
+}
+
+// handleMissingResource maneja el caso cuando no se especifica un recurso.
+// Envía una notificación de error al cliente.
+func handleMissingResource(conn *customws.Connection[wsmodels.WsUserData], pid string, action string) error {
+	errMsg := fmt.Sprintf("Recurso no especificado para la acción '%s'", action)
+	logger.Warn("HANDLER_DATA", errMsg)
+	conn.SendErrorNotification(pid, 400, errMsg)
+	return errors.New(errMsg)
 }
