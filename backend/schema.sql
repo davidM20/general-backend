@@ -55,6 +55,28 @@ Id INT PRIMARY KEY,
 Name VARCHAR(255) UNIQUE
 );
 
+
+/*
+Tabla User
+Descripción: Esta tabla almacena la información tanto de usuarios individuales como de empresas.
+La distinción entre tipo de usuario se maneja a través del campo RoleId.
+Para usuarios individuales: Se utilizan los campos personales (FirstName, LastName, etc.)
+Para empresas: Se utilizan los campos empresariales (RIF, CompanyName, Sector, etc.)
+
+Campos principales:
+- Información personal: FirstName, LastName, Email, Phone, etc.
+- Información empresarial: RIF, CompanyName, Sector, Location, etc.
+- Información de contacto: Email, ContactEmail, Phone, Address
+- Redes sociales: Github, Linkedin, Twitter, Facebook
+- Información académica: DegreeId, UniversityId
+- Información de estado: RoleId, StatusAuthorizedId
+
+Notas:
+- El campo Email es único y obligatorio para todos los usuarios
+- El campo RIF es único y obligatorio solo para empresas
+- Los timestamps (CreatedAt, UpdatedAt) se actualizan automáticamente
+*/
+
 CREATE TABLE IF NOT EXISTS User (
 Id BIGINT AUTO_INCREMENT PRIMARY KEY,
 FirstName VARCHAR(255),
@@ -62,6 +84,9 @@ LastName VARCHAR(255),
 UserName VARCHAR(255) UNIQUE,
 Password VARCHAR(255),
 Email VARCHAR(255) UNIQUE NOT NULL,
+ContactEmail VARCHAR(255),
+Twitter VARCHAR(255),
+Facebook VARCHAR(255),
 Phone VARCHAR(255),
 Sex VARCHAR(255),
 DocId VARCHAR(255) UNIQUE,
@@ -76,12 +101,49 @@ Summary VARCHAR(255),
 Address VARCHAR(255),
 Github VARCHAR(255),
 Linkedin VARCHAR(255),
+RIF VARCHAR(20) UNIQUE,
+Sector VARCHAR(100),
+CompanyName VARCHAR(255),
+Location VARCHAR(255),
+FoundationYear INT,
+EmployeeCount INT,
+CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 FOREIGN KEY (NationalityId) REFERENCES Nationality(Id),
 FOREIGN KEY (DegreeId) REFERENCES Degree(Id),
 FOREIGN KEY (UniversityId) REFERENCES University(Id),
 FOREIGN KEY (RoleId) REFERENCES Role(Id),
 FOREIGN KEY (StatusAuthorizedId) REFERENCES StatusAuthorized(Id)
 );
+
+-- Modificaciones adicionales a la tabla User
+-- Agregar campos de empresa
+ALTER TABLE User
+ADD COLUMN RIF VARCHAR(20) UNIQUE,
+ADD COLUMN Sector VARCHAR(100),
+ADD COLUMN CompanyName VARCHAR(255),
+ADD COLUMN Location VARCHAR(255),
+ADD COLUMN FoundationYear INT,
+ADD COLUMN EmployeeCount INT,
+ADD COLUMN CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
+
+-- Agregar campos de redes sociales y contacto
+ALTER TABLE User
+ADD COLUMN ContactEmail VARCHAR(255),
+ADD COLUMN Twitter VARCHAR(255),
+ADD COLUMN Facebook VARCHAR(255);
+
+-- Agregar índices para mejorar el rendimiento
+ALTER TABLE User
+ADD INDEX idx_rif (RIF),
+ADD INDEX idx_company_name (CompanyName),
+ADD INDEX idx_sector (Sector);
+
+-- Agregar restricciones
+ALTER TABLE User
+ADD CONSTRAINT chk_employee_count CHECK (EmployeeCount >= 0),
+ADD CONSTRAINT chk_foundation_year CHECK (FoundationYear > 1800 AND FoundationYear <= 2100);
 
 CREATE TABLE IF NOT EXISTS Online (
 UserOnlineId BIGINT PRIMARY KEY,

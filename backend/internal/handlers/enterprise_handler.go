@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 	// Importar auth si necesitas verificar roles
@@ -22,69 +23,86 @@ func NewEnterpriseHandler(db *sql.DB) *EnterpriseHandler {
 }
 
 // RegisterEnterprise maneja el registro de una nueva empresa
+// Campos mínimos requeridos:
+// - CompanyName: Nombre de la empresa
+// - RIF: Registro de Información Fiscal
+// - Sector: Sector empresarial
+// - FirstName: Nombre del contacto
+// - Email: Correo electrónico
+// - Phone: Teléfono de contacto
+// - Password: Contraseña para acceso
 func (h *EnterpriseHandler) RegisterEnterprise(w http.ResponseWriter, r *http.Request) {
-	// TODO: Proteger con middleware de autenticación y verificar roles (¿quién puede registrar empresas?)
-	/*
-			   claims, ok := r.Context().Value(auth.ContextKeyClaims).(*auth.Claims)
-			   if !ok || claims == nil {
-			       http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			       return
-			   }
-			   // Verificar si claims.RoleID tiene permiso
-			   isAdmin := claims.RoleID == 7 || claims.RoleID == 8 // Ejemplo: admin o superadmin
-		       isEmpresaRole := claims.RoleID == 9 // Ejemplo: rol Empresa
-		       // Lógica de permisos... ¿Un usuario normal puede crear una empresa asociada a él?
-		       // ¿O solo admins? ¿O usuarios con rol Empresa?
-	*/
-
-	var req models.Enterprise
+	var req models.EnterpriseRegistration
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Errorf("ENTERPRISE", "Error decoding request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Validaciones básicas
-	if req.RIF == "" || req.CompanyName == "" {
-		http.Error(w, "Missing required fields (RIF, CompanyName)", http.StatusBadRequest)
+	// Validaciones básicas de campos requeridos
+	if req.CompanyName == "" || req.RIF == "" || req.Sector == "" ||
+		req.FirstName == "" || req.Email == "" || req.Phone == "" || req.Password == "" {
+		http.Error(w, "Missing required fields (companyName, rif, sector, contactName, email, phone, password)", http.StatusBadRequest)
 		return
 	}
-	// TODO: Añadir validaciones más específicas (formato RIF, longitud, etc.)
 
-	// Verificar si el RIF ya existe
-	var exists bool
-	err := h.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM Enterprise WHERE RIF = ?)", req.RIF).Scan(&exists)
+	// TODO: Validar formato de RIF, email, teléfono y otros campos
+
+	// Verificar si ya existe un usuario con ese email
+	existsEmail, err := queries.MeasureQueryWithResult(func() (bool, error) {
+		return queries.CheckEmailExists(h.DB, req.Email)
+	})
 	if err != nil {
-		logger.Errorf("ENTERPRISE", "Error checking enterprise RIF existence: %v", err)
+		logger.Errorf("ENTERPRISE", "Error checking email existence: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	if exists {
+	if existsEmail {
+		http.Error(w, "Email already registered", http.StatusConflict)
+		return
+	}
+
+	// Verificar si ya existe una empresa con ese RIF
+	existsRIF, err := queries.MeasureQueryWithResult(func() (bool, error) {
+		return queries.CheckRIFExists(h.DB, req.RIF)
+	})
+	if err != nil {
+		logger.Errorf("ENTERPRISE", "Error checking RIF existence: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if existsRIF {
 		http.Error(w, "Enterprise with this RIF already exists", http.StatusConflict)
 		return
 	}
 
-	// Insertar la empresa
-	result, err := h.DB.Exec(`
-        INSERT INTO Enterprise (RIF, CompanyName, CategoryId, Description, Location, Phone)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `, req.RIF, req.CompanyName, req.CategoryId, req.Description, req.Location, req.Phone)
+	// Hashear la contraseña (debería usar una función de hash adecuada)
+	// TODO: Implementar hasheo de contraseña adecuado
+	hashedPassword := req.Password // Reemplazar con implementación real de hash
+	req.Password = hashedPassword
+
+	// Registrar la empresa en la base de datos
+	userId, err := queries.MeasureQueryWithResult(func() (int64, error) {
+		return queries.RegisterEnterprise(h.DB, &req)
+	})
 	if err != nil {
-		logger.Errorf("ENTERPRISE", "Error inserting enterprise: %v", err)
+		logger.Errorf("ENTERPRISE", "Error registering enterprise: %v", err)
 		http.Error(w, "Failed to register enterprise", http.StatusInternalServerError)
 		return
 	}
 
-	enterpriseID, err := result.LastInsertId()
-	if err != nil {
-		logger.Errorf("ENTERPRISE", "Error getting last insert ID for enterprise: %v", err)
-		http.Error(w, "Error processing registration", http.StatusInternalServerError)
-		return
+	// Preparar respuesta de éxito (sin incluir la contraseña)
+	response := models.EnterpriseResponse{
+		ID:          userId,
+		CompanyName: req.CompanyName,
+		RIF:         req.RIF,
+		Email:       req.Email,
+		Message:     "Enterprise registered successfully",
 	}
 
-	// Devolver respuesta
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	req.Id = enterpriseID // Añadir el ID generado al struct para la respuesta
-	json.NewEncoder(w).Encode(req)
+	json.NewEncoder(w).Encode(response)
 }
 
 // TODO: Implementar GetEnterprises (Listar/Buscar, podría ser WS)
