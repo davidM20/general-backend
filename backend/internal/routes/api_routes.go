@@ -70,8 +70,14 @@ const (
 	AuthPath         = "/login"
 	RegisterBasePath = "/register"
 	RegisterStep1    = RegisterBasePath + "/step1"
-	RegisterStep2    = RegisterBasePath + "/step2/{userID:[0-9]+}"
-	RegisterStep3    = RegisterBasePath + "/step3/{userID:[0-9]+}"
+	RegisterStep2    = RegisterBasePath + "/step2"
+	RegisterStep3    = RegisterBasePath + "/step3"
+
+	// Rutas de recuperación de contraseña
+	ResetPasswordPath     = "/reset-password"
+	ResetPasswordRequest  = ResetPasswordPath + "/request"
+	ResetPasswordVerify   = ResetPasswordPath + "/verify"
+	ResetPasswordComplete = ResetPasswordPath + "/complete"
 
 	// Rutas de usuarios
 	UsersPath   = "/users"
@@ -118,6 +124,10 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	// Configurar todas las rutas protegidas usando la función genérica
 	// Rutas de usuarios
 	setupProtectedRoute(protected, UsersMePath, handlers.userHandler.GetMyProfile, http.MethodGet)
+
+	// Rutas de registro protegidas (pasos 2 y 3)
+	setupProtectedRoute(protected, RegisterStep2, handlers.authHandler.RegisterStep2, http.MethodPost)
+	setupProtectedRoute(protected, RegisterStep3, handlers.authHandler.RegisterStep3, http.MethodPost)
 
 	// Rutas de categorías
 	setupProtectedRoute(protected, CategoriesPath, handlers.categoryHandler.AddCategory, http.MethodPost)
@@ -166,12 +176,16 @@ func setupHealthRoutes(router *mux.Router) {
 
 // setupPublicAuthRoutes configura las rutas públicas de autenticación y registro
 func setupPublicAuthRoutes(router *mux.Router, authHandler *handlers.AuthHandler) {
-	router.HandleFunc(RegisterStep1, authHandler.RegisterStep1).Methods(http.MethodPost)
-	router.HandleFunc(RegisterStep2, authHandler.RegisterStep2).Methods(http.MethodPost)
-	router.HandleFunc(RegisterStep3, authHandler.RegisterStep3).Methods(http.MethodPost)
+	router.HandleFunc(RegisterStep1, authHandler.Register).Methods(http.MethodPost)
 	router.HandleFunc(AuthPath, authHandler.Login).Methods(http.MethodPost)
 
-	// TODO: Implementar lógica de token temporal para registro en pasos
+	// Rutas para recuperación de contraseña
+	router.HandleFunc(ResetPasswordRequest, authHandler.RequestPasswordReset).Methods(http.MethodPost)
+	router.HandleFunc(ResetPasswordVerify, authHandler.VerifyPasswordReset).Methods(http.MethodGet)
+	router.HandleFunc(ResetPasswordComplete, authHandler.CompletePasswordReset).Methods(http.MethodPost)
+
+	// Nota: Los pasos 2 y 3 del registro ahora son rutas protegidas
+	// que utilizan el token de autenticación para identificar al usuario
 }
 
 // setupPublicEnterpriseRoutes configura las rutas públicas para empresas

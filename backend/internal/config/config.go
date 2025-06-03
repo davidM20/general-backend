@@ -16,7 +16,7 @@ type Config struct {
 	// TODO: Añadir configuración para Google Cloud Storage (bucket, credentials path, etc.)
 	GCSBucketName        string `mapstructure:"GCS_BUCKET_NAME"`
 	GCSServiceAccountKey string `mapstructure:"GCS_SERVICE_ACCOUNT_KEY_PATH"` // Ruta al archivo JSON de credenciales
-
+	FrontendURL          string `mapstructure:"FRONTEND_URL"`                 // URL base del frontend para redirecciones
 }
 
 // LoadConfig loads configuration from environment variables or a config file.
@@ -42,6 +42,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("DB_HOST", "127.0.0.1")
 	viper.SetDefault("DB_PORT", "3306")
 	viper.SetDefault("JWT_SECRET", "un-secreto-muy-seguro-cambiar-en-produccion") // ¡CAMBIAR ESTO!
+	viper.SetDefault("FRONTEND_URL", "http://localhost:3000")                     // URL base del frontend
 
 	// Intentar leer el archivo de configuración
 	if err := viper.ReadInConfig(); err != nil {

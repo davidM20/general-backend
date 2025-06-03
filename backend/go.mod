@@ -14,6 +14,7 @@ require (
 	github.com/spf13/viper v1.20.1
 	golang.org/x/crypto v0.37.0
 	google.golang.org/api v0.215.0
+	gopkg.in/mail.v2 v2.3.1
 )
 
 require (
@@ -72,5 +73,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241223144023-3abc09e42ca8 // indirect
 	google.golang.org/grpc v1.67.3 // indirect
 	google.golang.org/protobuf v1.36.1 // indirect
+	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

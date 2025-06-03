@@ -9,14 +9,37 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
-// AuthMiddleware valida el token JWT de las peticiones entrantes desde el parámetro URL 'token'
+// Tipos personalizados para claves de contexto para evitar colisiones
+type contextKey string
+
+const (
+	UserIDContextKey contextKey = "userID"
+	RoleIDContextKey contextKey = "roleID"
+)
+
+// AuthMiddleware valida el token JWT de las peticiones entrantes
 func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Obtener token del query parameter
-			token := r.URL.Query().Get("token")
+			var token string
+
+			// Intentar obtener el token del encabezado Authorization
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				// Formato esperado: "Bearer <token>"
+				if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+					token = authHeader[7:]
+				}
+			}
+
+			// Si no se encuentra en el encabezado, intentar obtenerlo del query parameter
 			if token == "" {
-				logger.Warn("AUTH", "AuthMiddleware: Missing 'token' query parameter")
+				token = r.URL.Query().Get("token")
+			}
+
+			// Si no se encuentra el token en ningún lugar
+			if token == "" {
+				logger.Warn("AUTH", "AuthMiddleware: No token found in Authorization header or query parameter")
 				http.Error(w, "Missing token", http.StatusUnauthorized)
 				return
 			}
@@ -29,11 +52,11 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Agregar información del usuario al contexto
-			ctx := context.WithValue(r.Context(), "userID", claims.UserID)
-			ctx = context.WithValue(ctx, "roleID", claims.RoleID)
+			// Agregar información del usuario al contexto usando claves tipadas
+			ctx := context.WithValue(r.Context(), UserIDContextKey, claims.UserID)
+			ctx = context.WithValue(ctx, RoleIDContextKey, claims.RoleID)
 
-			logger.Infof("AUTH", "AuthMiddleware: User %d authenticated via token param with Role %d", claims.UserID, claims.RoleID)
+			logger.Infof("AUTH", "AuthMiddleware: User %d authenticated with Role %d", claims.UserID, claims.RoleID)
 
 			// Continuar con el siguiente handler
 			next.ServeHTTP(w, r.WithContext(ctx))
