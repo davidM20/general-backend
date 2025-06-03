@@ -1,0 +1,227 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Asistente de Desarrollo React Native para Chat con WebSockets
+
+Objetivo: Implementar funcionalidades de chat en una aplicación React Native, siguiendo estrictamente las siguientes reglas de arquitectura, desarrollo y manejo de WebSockets.
+
+1. Arquitectura del Proyecto Base:
+Utiliza la siguiente estructura de carpetas:
+
+src/
+├── api/                 # Configuración y llamadas a API (incluye /websocket/)
+├── components/          # Componentes reutilizables (incluye /common/ y específicos como /chat/)
+├── context/             # Contextos de React (ej: /ChatContext/)
+├── hooks/               # Custom hooks (ej: /useChat/)
+├── navigation/          # Configuración de navegación
+├── views/               # Pantallas principales (ej: /chat/)
+├── services/            # Lógica de negocio y repositorios (ej: /chat/)
+├── theme/               # Estilos y temas
+├── translations/        # Archivos de internacionalización
+├── types/               # Definiciones TypeScript globales y específicas (ej: websocket.ts)
+└── utils/               # Utilidades y helpers
+
+
+2. Principios de Desarrollo Clave:
+
+Componentes: Funcionales con Hooks. Memoización (React.memo, useMemo, useCallback) donde sea necesario. Adherirse al patrón de diseño Atómico.
+
+Estado Global: Context API. Para lógica compleja dentro de un contexto, usar useReducer. Priorizar estado local cuando sea posible.
+
+Estado del Chat (ChatState en src/types/):
+
+interface Message { /* ... definir estructura de mensaje individual ... */ id: string; text: string; userId: string; timestamp: number; /* ... */ }
+interface ChatState {
+    messages: Message[];
+    isConnected: boolean;
+    pendingMessages: Message[];
+    currentChat: string | null;
+}
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+TypeScript
+IGNORE_WHEN_COPYING_END
+
+Contexto del Chat (src/context/ChatContext/):
+
+Implementar Provider para ChatState.
+
+Exponer métodos para manipular el estado (ej: addMessage, setConnected, setCurrentChat).
+
+Considerar persistencia local (ej: AsyncStorage) para messages o currentChat.
+
+Flujo de Mensajes de Chat (Entrante): WebSocket -> Hook (useChat) -> Service (ChatService) -> (Opcional: API REST para persistencia/lógica adicional) -> Actualización de UI vía Context/Hook.
+
+Formato de Mensajes Client-to-Server (src/types/):
+
+interface ChatMessagePayload { // Renombrado de ChatMessage para evitar colisión con Message de ChatState
+    action: 'get_list' | 'get_pending' | 'get_history' | 'send_message' | 'ping' | 'get_info'; // 'get_info' añadido para nuevas funcionalidades
+    resource?: 'chat' | 'notification' | string; // string para nuevas funcionalidades
+    data?: {
+        chatId?: string;
+        text?: string;
+        limit?: number;
+        beforeMessageId?: string;
+        [key: string]: any; // Para datos adicionales de nuevas funcionalidades
+    };
+}
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+TypeScript
+IGNORE_WHEN_COPYING_END
+
+Validación: resource obligatorio excepto para "ping". Validar data según action-resource. Usar tipos TypeScript estrictos.
+
+Patrones de Diseño Obligatorios:
+
+Repository: Para Services (abstracción de fuentes de datos).
+
+Observer: Para la comunicación WebSocket (listeners en hooks).
+
+Optimización y Buenas Prácticas:
+
+Rendimiento: Virtualización para listas largas, lazy loading para imágenes, optimizar re-renders.
+
+Seguridad: Validar y sanitizar datos de entrada/salida.
+
+Documentación: JSDoc para componentes y hooks, READMEs, y documentación de tipos/interfaces.
+
+3. Implementación de NUEVAS Funcionalidades WebSocket (Patrón a seguir):
+
+Paso 1: Definir Interfaces de Datos (en src/types/websocket.ts)
+
+// Ejemplo para una nueva funcionalidad "FeatureName"
+export interface FeatureNameData {
+    id: string;
+    value: any;
+    // ... otros campos específicos
+}
+
+// Mensaje del Servidor al Cliente (general)
+export interface ServerToClientMessage<T = any> {
+    type: 'data_event' | 'chat_list' | 'chat_message' | 'server_ack' | 'error' | string; // string para tipos custom
+    payload?: {
+        origin?: string; // ej: 'get_info_feature_name'
+        [key: string]: T | any; // ej: feature_name: FeatureNameData
+    };
+    error?: string;
+}
+
+// Payload para solicitar datos (usado en sendDataRequest)
+export interface DataRequestPayload {
+    action: 'get_info' | string; // 'get_info' para obtener datos de una nueva funcionalidad
+    resource: string; // ej: 'feature_name'
+    data?: Record<string, any>;
+}
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+TypeScript
+IGNORE_WHEN_COPYING_END
+
+Paso 2: Crear Hook Personalizado (ej: src/hooks/useFeatureName/useWSFeatureName.ts)
+
+// import { useState, useCallback, useEffect, useRef } from 'react';
+// import { useWSContext } from '@/hooks/useContext/useWSContext'; // Asumir un useWSContext genérico
+// import { DataRequestPayload, ServerToClientMessage, FeatureNameData } from '@/types/websocket';
+
+export const useWSFeatureName = (/* parámetros iniciales si los hay */) => {
+    const { sendDataRequest, connectionState, addMessageListener, removeMessageListener } = useWSContext(); // Asumir que useWSContext provee esto
+    const [data, setData] = useState<FeatureNameData | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const loadingRef = useRef(false); // Prevenir múltiples cargas simultáneas
+
+    const loadData = useCallback(async (params?: Record<string, any>) => {
+        if (connectionState !== 'connected') { setError('WebSocket no conectado.'); return; }
+        if (loadingRef.current) return;
+
+        setLoading(true); loadingRef.current = true; setError(null);
+        try {
+            const payload: DataRequestPayload = {
+                action: 'get_info', // Acción genérica para obtener datos
+                resource: 'feature_name', // Identificador único de la funcionalidad
+                data: params || {},
+            };
+            await sendDataRequest(payload); // sendDataRequest es provisto por useWSContext
+
+            const timeoutId = setTimeout(() => {
+                if (loadingRef.current) {
+                    setLoading(false); loadingRef.current = false; setError('Timeout: La solicitud tardó demasiado.');
+                }
+            }, 10000); // Timeout de 10s
+            // El listener se encargará de limpiar el timeout al recibir datos
+            // Devolver una función de limpieza para el timeout por si el componente se desmonta antes
+            return () => clearTimeout(timeoutId);
+        } catch (err: any) {
+            setError(err.message || 'Error al solicitar datos de FeatureName.');
+            setLoading(false); loadingRef.current = false;
+        }
+    }, [sendDataRequest, connectionState]);
+
+    useEffect(() => {
+        if (!addMessageListener || !removeMessageListener) return;
+
+        const handleMessage = (message: ServerToClientMessage<FeatureNameData>) => {
+            if (message.type === 'data_event' && message.payload?.origin === 'get_info_feature_name') { // 'get_info_feature_name' es un identificador único
+                if (message.payload.feature_name) { // El servidor debe enviar los datos bajo una clave 'feature_name'
+                    setData(message.payload.feature_name as FeatureNameData);
+                    setError(null);
+                } else if (message.error) {
+                    setError(message.error);
+                }
+                setLoading(false); loadingRef.current = false;
+                // Aquí se podría limpiar el timeout si se pasó su ID al listener
+            } else if (message.type === 'error' && message.payload?.origin === 'get_info_feature_name') {
+                setError(message.error || 'Error del servidor para FeatureName.');
+                setLoading(false); loadingRef.current = false;
+            }
+        };
+
+        const listenerId = addMessageListener(handleMessage); // Asumir que addMessageListener devuelve un ID o la propia función para removerla
+        return () => removeMessageListener(listenerId); // O removeMessageListener(handleMessage)
+    }, [addMessageListener, removeMessageListener]);
+
+    return { data, loading, error, loadData };
+};
+IGNORE_WHEN_COPYING_START
+content_copy
+download
+Use code with caution.
+TypeScript
+IGNORE_WHEN_COPYING_END
+
+Nota para useWSContext: Este contexto debe gestionar la instancia de WebSocket, su estado de conexión (connected, disconnected, connecting), proveer sendDataRequest(payload: DataRequestPayload), y métodos addMessageListener(callback): string | function y removeMessageListener(idOrFunction).
+
+Paso 3: Integrar Hook en Componente de Pantalla (ej: src/screens/FeatureName/FeatureNameScreen.tsx)
+
+Importar y usar el hook useWSFeatureName.
+
+Importar y usar useWSContext para verificar connectionState.
+
+Llamar a loadData() desde useEffect cuando connectionState === 'connected' o al presionar un botón de refresco.
+
+Renderizar UI condicionalmente basada en loading, error, y data.
+
+Proveer mecanismos de reintento (onRetry llamando a loadData).
+
+Limpieza de listeners se maneja dentro del hook.
+
+4. Consideraciones Adicionales para la Implementación:
+
+Manejo de Estado de Carga y Errores: Componentes dedicados para LoadingIndicator y ErrorMessage con opción de reintento.
+
+Reconexión: El useWSContext debe manejar la reconexión automática. Los hooks que dependen de él deben reaccionar a los cambios en connectionState (ej: re-intentar loadData).
+
+Validación de Datos (Frontend): Aunque el backend valide, validar los datos recibidos del WebSocket en el frontend antes de usarlos, y usar valores por defecto si es necesario.
+
+Logging: Implementar logging claro y consistente, especialmente para el flujo WebSocket (conexión, mensajes enviados/recibidos, errores).
+
+Procederé siguiendo estas directrices.

@@ -1,48 +1,33 @@
 ---
 description: 
 globs: 
-alwaysApply: true
+alwaysApply: false
 ---
-Eres un asistente de IA experto en Go. Necesito implementar una funcionalidad para guardar mensajes de chat en una aplicación existente.
+**Prompt para Implementación de Funcionalidad de Guardado de Mensajes de Chat en Go**
 
+---
 
-# Arquitectura del Proyecto Backend
+**Objetivo General:**  
+Eres un asistente de IA experto en Go. Tu misión es implementar una funcionalidad para guardar mensajes de chat en una aplicación existente. Sigue rigurosamente las instrucciones a continuación, sin omitir ni modificar ningún detalle.
 
-## Reglas de Desarrollo para Go
+---
 
-1. **Manejo de Mensajes de Chat**:
-   - Implementar siguiendo el flujo: WebSocket → Handler → Service → Query
-   - Usar los modelos existentes en `models.go` para estructuras de datos
-   - Registrar nuevas consultas SQL en `queries/queries.go`
+### 1. Arquitectura del Proyecto Backend
 
-2. **Capa de Base de Datos**:
-   - Mantener compatibilidad con sintaxis MySQL
-   - Usar el wrapper de métricas para consultas:
-   ```go
-   result, err := queries.MeasureQueryWithResult(func() (interface{}, error) {
-       return queries.GetChatMessages(db, params)
-   })
-   ```
+**Estructura de Carpetas:**  
+- **Handlers y Servicios (WebSocket):**
+  - `backend/internal/websocket/handlers/` → Manejadores para la recepción y procesamiento inicial de mensajes.
+  - `backend/internal/websocket/services/chat_service.go` → Lógica de negocio específica para el procesamiento de mensajes de chat.
+  
+- **Base de Datos:**
+  - `backend/internal/db/queries/` → Ubicación de las consultas SQL. Todas las nuevas consultas deben registrarse aquí, utilizando el wrapper de métricas.
+  - `backend/internal/models/` → Modelos existentes para estructurar los datos.
 
-3. **WebSocket**:
-   - Utilizar el paquete `customws` para gestión de conexiones
-   - Los DTOs específicos van en `wsmodels/types.go`
-   - Implementar lógica de negocio en `services/chat_service.go`
+- **Paquetes Comunes:**
+  - `backend/pkg/customws/` → Gestión de conexiones WebSocket con el método `handlePeerToPeerMessage` para comunicación P2P.
+  - `backend/pkg/logger/` → Sistema de logging unificado para el registro de eventos.
 
-4. **Logging**:
-   - Usar el logger configurado para todos los eventos:
-   ```go
-   logger.Infof("CHAT", "Nuevo mensaje de usuario %d", userID)
-   ```
-
-5. **Patrones de Diseño**:
-   - Inyección de dependencias en constructores
-   - Separación clara entre:
-     - Handlers (coordinación de flujo)
-     - Services (lógica de negocio)
-     - Queries (acceso a BD)
-
-## Estructura Actual (actualizada)
+**Ejemplo de Estructura de Directorios:**
 ```
 backend/
 ├── internal/
@@ -51,14 +36,59 @@ backend/
 │   │   │   └── chat_service.go    # Lógica de procesamiento de mensajes
 │   │   └── handlers/              # Manejadores de mensajes WS
 │   ├── db/
-│   │   └── queries/               # Consultas SQL con métricas
-│   └── models/                    # Modelos de BD
+│   │   └── queries/               # Consultas SQL (con métricas)
+│   └── models/                    # Modelos de la base de datos
+├── docs/                          # Cualquier info que se require consultar aqui
+│
 └── pkg/
     ├── customws/                  # Gestión de conexiones WS
-    └── logger/                    # Sistema de logging unificado
+    └── logger/                    # Sistema de logging
 ```
 
-## Flujo de Mensajes
+---
+
+### 2. Reglas de Desarrollo para Go
+
+**Manejo de Mensajes de Chat:**  
+- **Flujo a Seguir:**  
+  WebSocket → Handler → Service → Query  
+- **Puntos Clave:**
+  - Utiliza siempre los modelos definidos en `models.go`.
+  - Al agregar nuevas consultas SQL, regístralas en `queries/queries.go`.
+
+**Capa de Base de Datos:**  
+- Asegura la compatibilidad con la sintaxis MySQL.  
+- Usa el wrapper de métricas para medir consultas. Por ejemplo:
+  ```go
+  result, err := queries.MeasureQueryWithResult(func() (interface{}, error) {
+      return queries.GetChatMessages(db, params)
+  })
+  ```
+
+**WebSocket:**  
+- Utiliza el paquete `customws` para la gestión de conexiones.  
+- Los DTOs específicos se encuentran en `wsmodels/types.go`.  
+- Toda la lógica de negocio debe implementarse en `services/chat_service.go`.
+
+**Logging:**  
+- Emplea el logger configurado para registrar todos los eventos. Ejemplo:
+  ```go
+  logger.Infof("CHAT", "Nuevo mensaje de usuario %d", userID)
+  ```
+
+**Patrones de Diseño:**  
+- Emplea inyección de dependencias en los constructores.  
+- Mantén una separación clara entre:
+  - **Handlers:** Coordinación del flujo de mensajes.
+  - **Services:** Implementación de la lógica de negocio.
+  - **Queries:** Acceso a la base de datos.
+
+---
+
+### 3. Flujo de Mensajes
+
+Utiliza el siguiente diagrama de secuencia como referencia para comprender el flujo completo:
+
 ```mermaid
 sequenceDiagram
     participant WS as WebSocket
@@ -66,7 +96,7 @@ sequenceDiagram
     participant S as Service
     participant Q as Query
     participant DB as Database
-    
+
     WS->>H: Mensaje entrante
     H->>S: Procesar mensaje
     S->>Q: Ejecutar consulta
@@ -77,69 +107,81 @@ sequenceDiagram
     H-->>WS: Enviar respuesta
 ```
 
-## Política de Actualización
-Al agregar nuevas funcionalidades relacionadas con chat:
-1. Crear handlers en `/websocket/handlers/`
-2. Implementar lógica de negocio en `services/`
-3. Añadir consultas SQL en `queries/queries.go`
-4. Actualizar modelos existentes o crear nuevos en `models/`
-5. Documentar cambios en el flujo
-6. Implementa en los archivos todas las propuestas a menos que te indiquen que no lo hagas
-7. Cuando hagas un cambio en algun archivo pon al inicio del archivo comentarios que describan las reglas y requisitos para cada archivo
-8. Para enviar un mensaje o informacion de un usuario a otro se debe usar el metodo handlePeerToPeerMessage que existe en customws para comunicar p2p
-```
+---
 
-# Estructura de Action y Resource
+### 4. Política de Actualización y Reglas de Modificación
 
-## 1. Orden de Procesamiento
-El sistema procesa los mensajes en este orden:
-1. Primero verifica la `Action`
-2. Luego verifica el `Resource` (excepto para "ping")
+- **Al agregar nuevas funcionalidades relacionadas con chat:**
+  1. **Handlers:** Crea o actualiza en `/websocket/handlers/`.
+  2. **Lógica de Negocio:** Implementa o modifica la lógica en `services/`.
+  3. **Consultas SQL:** Añade o actualiza consultas en `queries/queries.go`.
+  4. **Modelos:** Actualiza los modelos existentes o crea nuevos en `models/`.
+  5. **Documentación:** Asegúrate de documentar todos los cambios realizados en el flujo.
+  6. **Comentarios:** Al modificar un archivo, coloca al inicio un resumen con comentarios que describan las reglas y requisitos específicos para ese archivo.
+  7. **Comunicación P2P:** Para enviar un mensaje o información de un usuario a otro, utiliza el método `handlePeerToPeerMessage` de `customws`.
 
-## 2. Combinaciones Válidas
+---
 
-### Action: "ping"
-- No requiere Resource
-- Es la única acción que puede funcionar sin Resource
+### 5. Estructura de "Action" y "Resource"
 
-### Action: "get_list"
-- **Resources válidos**:
-  - `"chat"` → Obtiene lista de chats
-  - `"notification"` → Obtiene lista de notificaciones
+**Orden de Procesamiento:**  
+1. Verificar primero la `action`.  
+2. Luego, (excepto para "ping") verificar el `resource`.
 
-### Action: "get_pending"
-- **Resources válidos**:
-  - `"notification"` → Obtiene notificaciones pendientes
-  - Añade automáticamente `onlyUnread: true`
+**Combinaciones Válidas:**
 
-### Action: "get_history"
-- **Resources válidos**:
-  - `"chat"` → Obtiene historial de chat
-  - Requiere datos adicionales: `chatId`, `limit`, `beforeMessageId`
+- **Action: "ping"**  
+  - No requiere `resource`.  
+  - Es la única acción que funciona sin especificar este parámetro.
 
-### Action: "send_message"
-- **Resources válidos**:
-  - `"chat"` → Envía mensaje de chat
-  - Requiere datos adicionales: `chatId`, `text`
+- **Action: "get_list"**  
+  - `resource` puede ser:  
+    - `"chat"` → Obtener lista de chats.  
+    - `"notification"` → Obtener lista de notificaciones.
 
-## 3. Ejemplo de Estructura
+- **Action: "get_pending"**  
+  - `resource`: `"notification"` → Obtener notificaciones pendientes.  
+  - Se añade automáticamente `onlyUnread: true`.
+
+- **Action: "get_history"**  
+  - `resource`: `"chat"` → Obtener historial de chat.  
+  - **Datos obligatorios:** `chatId`, `limit`, `beforeMessageId`.
+
+- **Action: "send_message"**  
+  - `resource`: `"chat"` → Enviar mensaje de chat.  
+  - **Datos obligatorios:** `chatId`, `text`.
+
+**Ejemplo de Estructura del Mensaje:**
 ```json
 {
-    "action": "get_list",     // Primero se verifica la acción
-    "resource": "chat",       // Luego se verifica el recurso
-    "data": {                 // Datos específicos según la combinación
-        // campos específicos
+    "action": "get_list",    // Se verifica primero la acción
+    "resource": "chat",      // Se verifica luego el recurso (excepto en "ping")
+    "data": {                // Campos específicos, según la combinación
+        // Ejemplo de datos específicos para la acción
     }
 }
 ```
 
-## 4. Reglas Importantes
-1. Toda acción (excepto "ping") DEBE tener un Resource
-2. Si no se especifica un Resource, se devuelve error 400
-3. Las combinaciones Action-Resource deben ser exactamente las especificadas
-4. Cada combinación puede requerir datos específicos en el campo `data`
+**Reglas Importantes Relacionadas a "Action" y "Resource":**
+1. Toda acción (excepto "ping") **debe** incluir un `resource`.  
+2. Si no se especifica el `resource`, se debe devolver un error 400.  
+3. Las combinaciones `action`-`resource` deben coincidir *exactamente* con las especificadas.  
+4. Cada combinación puede requerir datos específicos adicionales en el campo `data`.
 
-Esta estructura jerárquica (Action → Resource → Data) 
+---
 
+### 6. Reglas Específicas Adicionales
 
-IsMyMessage si es 1 es mi mensaje, caso 0 es mensaje de otra persona
+- **Identificación de Mensajes Propios:**  
+  El campo `IsMyMessage` toma el valor `1` si el mensaje es propio y `0` si es de otro usuario.
+
+- **Roles:**  
+  El único usuario con rol de administrador es el que tiene `ID: 8` (tipo `int64`).
+
+- **Actualización de Archivos y Ejemplos en Código:**  
+  Siempre que se te solicite, actualiza los archivos pertinentes para ahorrar tokens. Los ejemplos deben mostrarse directamente en el código.
+
+---
+
+**Instrucción Final:**  
+Sigue meticulosamente todas las pautas y reglas mencionadas, sin desviar o modificar ningún requisito. Cada cambio, consulta y lógica debe implementarse de acuerdo a la estructura y directrices proporcionadas. La adherencia a estas instrucciones es obligatoria para asegurar la funcionalidad correcta y la cohesión del proyecto.

@@ -1,0 +1,7 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Debo priorizar la creacion de codigo limpio y reutilizable cada vez que genero codigo o modifico codigo. si me piden hacer un ajusto primero indago en el contexto del archivo para entender bien mi tarea uso lo que me dice el usuario pero el contexto completo lo obtengo al indagar en dependencias nombres de variables y busqueda de dependencias para tener el mayor contexto para realizar mi tarea. tambien debo proporcionar al inicio del archivo una guia de como y cuales son las reglas del archivo que debo respetar si un tiempo despues me toca o hacer una nueva funcionalidad o una edicion para saber como no daniarlo todo. 
+Cada función debe tener una única responsabilida, Mantener la separación de responsabilidades y Documentar todas las funciones y tipos esos son mis principios
