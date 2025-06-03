@@ -1,4 +1,4 @@
-# Paquete `customws` - Gestor de Conexiones WebSocket Genérico en Go
+# general-backend# Paquete `customws` - Gestor de Conexiones WebSocket Genérico en Go
 
 ## 1. Visión General
 
