@@ -2,31 +2,37 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/auth"
+	"github.com/davidM20/micro-service-backend-go.git/internal/config"
 	"github.com/davidM20/micro-service-backend-go.git/internal/middleware"
 	"github.com/davidM20/micro-service-backend-go.git/internal/services"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
+	"github.com/gorilla/mux"
 )
 
 /*
  * ===================================================
- * HANDLER PARA LA SUBIDA DE ARCHIVOS PDF
+ * HANDLER PARA LA SUBIDA Y VISUALIZACIÓN DE ARCHIVOS PDF
  * ===================================================
  *
- * Este handler gestiona las solicitudes HTTP para subir archivos PDF.
+ * Este handler gestiona las solicitudes HTTP para subir y visualizar archivos PDF.
  * Extrae el archivo de la solicitud, obtiene el ID de usuario autenticado
  * y llama al PDFUploadService para procesar y guardar el PDF.
  */
 
-// PDFHandler maneja las solicitudes de subida de PDF.
+// PDFHandler maneja las solicitudes de subida y visualización de PDF.
 type PDFHandler struct {
 	pdfService *services.PDFUploadService
+	cfg        *config.Config // Añadido para JWT y GCS config
 }
 
 // NewPDFHandler crea una nueva instancia de PDFHandler.
-func NewPDFHandler(pdfService *services.PDFUploadService) *PDFHandler {
-	return &PDFHandler{pdfService: pdfService}
+func NewPDFHandler(pdfService *services.PDFUploadService, cfg *config.Config) *PDFHandler {
+	return &PDFHandler{pdfService: pdfService, cfg: cfg}
 }
 
 // UploadPDF es el método que maneja la petición POST para subir un archivo PDF.
@@ -77,4 +83,101 @@ func (h *PDFHandler) UploadPDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(uploadDetails)
+}
+
+// ViewPDF maneja la solicitud GET para ver/descargar un PDF, autenticando con token en query param.
+func (h *PDFHandler) ViewPDF(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	filename := vars["filename"]
+	if filename == "" {
+		logger.Warn("ViewPDF.Params", "Nombre de archivo no proporcionado en la ruta.")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Nombre de archivo requerido."})
+		return
+	}
+
+	tokenStr := r.URL.Query().Get("token")
+	if tokenStr == "" {
+		logger.Warn("ViewPDF.Auth", "Token no proporcionado en query params.")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Token de autenticación requerido."})
+		return
+	}
+
+	claims, err := auth.ValidateJWT(tokenStr, []byte(h.cfg.JwtSecret))
+	if err != nil {
+		logger.Warnf("ViewPDF.Auth", "Token inválido: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Token inválido o expirado."})
+		return
+	}
+
+	logger.Infof("ViewPDF.Auth", "Acceso autorizado para UserID: %s a PDF: %s", claims.Subject, filename)
+
+	if h.cfg.GCSBucketName == "" {
+		logger.Error("ViewPDF.Config", "El nombre del bucket GCS no está configurado.")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Error de configuración del servidor."})
+		return
+	}
+
+	gcsURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", h.cfg.GCSBucketName, filename)
+
+	client := &http.Client{}
+	req, err := http.NewRequestWithContext(r.Context(), "GET", gcsURL, nil)
+	if err != nil {
+		logger.Errorf("ViewPDF.GCSRequestError", "Error creando request para GCS %s: %v", gcsURL, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Error al solicitar el PDF."})
+		return
+	}
+
+	gcsResponse, err := client.Do(req)
+	if err != nil {
+		logger.Errorf("ViewPDF.GCSDownloadError", "Error descargando PDF de GCS %s: %v", gcsURL, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{"error": "No se pudo obtener el PDF del almacenamiento."})
+		return
+	}
+	defer gcsResponse.Body.Close()
+
+	if gcsResponse.StatusCode != http.StatusOK {
+		logger.Warnf("ViewPDF.GCSStatusError", "GCS devolvió estado no OK (%d) para %s", gcsResponse.StatusCode, gcsURL)
+		w.Header().Set("Content-Type", "application/json")
+		if gcsResponse.StatusCode == http.StatusNotFound {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "PDF no encontrado."})
+		} else {
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Error al obtener el PDF del almacenamiento."})
+		}
+		return
+	}
+
+	// Para PDFs, el Content-Type es generalmente application/pdf
+	contentType := gcsResponse.Header.Get("Content-Type")
+	if contentType == "" || contentType != "application/pdf" {
+		logger.Warnf("ViewPDF.GCSContentTypeMismatch", "GCS devolvió Content-Type '%s' para PDF %s. Forzando a application/pdf.", contentType, gcsURL)
+		contentType = "application/pdf"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	if gcsResponse.ContentLength > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", gcsResponse.ContentLength))
+	}
+	// Content-Disposition ayuda al navegador a decidir si mostrar en línea o descargar.
+	// 'inline' sugiere mostrarlo. 'attachment; filename="filename.pdf"' sugeriría descargarlo.
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename)) // Sugerir mostrar en línea
+
+	_, err = io.Copy(w, gcsResponse.Body)
+	if err != nil {
+		logger.Errorf("ViewPDF.ResponseWriteError", "Error escribiendo PDF al cliente: %v", err)
+		return
+	}
 }

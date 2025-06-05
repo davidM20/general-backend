@@ -101,6 +101,8 @@ const (
 	AudioUploadPath = "/audios/upload"          // Específica para audios
 	PDFUploadPath   = "/pdfs/upload"            // Específica para PDFs
 	ImageViewPath   = "/images/view/{filename}" // Para visualizar imágenes con token en query param
+	AudioViewPath   = "/audios/view/{filename}" // Para visualizar audios con token en query param
+	PDFViewPath     = "/pdfs/view/{filename}"   // Para visualizar PDFs con token en query param
 
 	// Rutas de Eventos Comunitarios
 	CommunityEventsPath = "/community-events"
@@ -127,6 +129,12 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 
 	// Ruta para visualización de imágenes (autenticación especial vía query param)
 	api.HandleFunc(ImageViewPath, handlers.imageHandler.ViewImage).Methods(http.MethodGet)
+
+	// Ruta para visualización de audios (autenticación especial vía query param)
+	api.HandleFunc(AudioViewPath, handlers.audioHandler.ViewAudio).Methods(http.MethodGet)
+
+	// Ruta para visualización de PDFs (autenticación especial vía query param)
+	api.HandleFunc(PDFViewPath, handlers.pdfHandler.ViewPDF).Methods(http.MethodGet)
 
 	// Configurar rutas protegidas (requieren autenticación JWT)
 	protected := api.PathPrefix("/").Subrouter()
@@ -193,8 +201,8 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		categoryHandler:       handlers.NewCategoryHandler(),
 		communityEventHandler: handlers.NewCommunityEventHandler(db, cfg),
 		imageHandler:          handlers.NewImageHandler(imageUploadService, cfg),
-		audioHandler:          handlers.NewAudioHandler(audioUploadService),
-		pdfHandler:            handlers.NewPDFHandler(pdfUploadService),
+		audioHandler:          handlers.NewAudioHandler(audioUploadService, cfg),
+		pdfHandler:            handlers.NewPDFHandler(pdfUploadService, cfg),
 	}
 }
 
