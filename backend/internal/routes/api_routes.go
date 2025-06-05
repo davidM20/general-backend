@@ -103,6 +103,10 @@ const (
 	ImageViewPath   = "/images/view/{filename}" // Para visualizar imágenes con token en query param
 	AudioViewPath   = "/audios/view/{filename}" // Para visualizar audios con token en query param
 	PDFViewPath     = "/pdfs/view/{filename}"   // Para visualizar PDFs con token en query param
+	VideoUploadPath = "/videos/upload"          // Para subir videos
+	// Rutas de streaming de video HLS
+	VideoMasterPlaylistPath = "/videos/stream/{contentID}/master.m3u8"
+	VideoVariantPath        = "/videos/stream/{contentID}/{quality}/{fileName:.+}"
 
 	// Rutas de Eventos Comunitarios
 	CommunityEventsPath = "/community-events"
@@ -127,14 +131,12 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupPublicCategoryRoutes(api, handlers.categoryHandler)
 	setupPublicMiscRoutes(api, handlers.miscHandler)
 
-	// Ruta para visualización de imágenes (autenticación especial vía query param)
+	// Rutas de visualización/streaming con autenticación por query param token
 	api.HandleFunc(ImageViewPath, handlers.imageHandler.ViewImage).Methods(http.MethodGet)
-
-	// Ruta para visualización de audios (autenticación especial vía query param)
 	api.HandleFunc(AudioViewPath, handlers.audioHandler.ViewAudio).Methods(http.MethodGet)
-
-	// Ruta para visualización de PDFs (autenticación especial vía query param)
 	api.HandleFunc(PDFViewPath, handlers.pdfHandler.ViewPDF).Methods(http.MethodGet)
+	api.HandleFunc(VideoMasterPlaylistPath, handlers.videoHandler.StreamVideoMasterPlaylist).Methods(http.MethodGet)
+	api.HandleFunc(VideoVariantPath, handlers.videoHandler.StreamVideoVariant).Methods(http.MethodGet)
 
 	// Configurar rutas protegidas (requieren autenticación JWT)
 	protected := api.PathPrefix("/").Subrouter()
@@ -158,6 +160,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupProtectedRoute(protected, ImageUploadPath, handlers.imageHandler.UploadImage, http.MethodPost)
 	setupProtectedRoute(protected, AudioUploadPath, handlers.audioHandler.UploadAudio, http.MethodPost)
 	setupProtectedRoute(protected, PDFUploadPath, handlers.pdfHandler.UploadPDF, http.MethodPost)
+	setupProtectedRoute(protected, VideoUploadPath, handlers.videoHandler.UploadVideo, http.MethodPost)
 
 	// Rutas de Eventos Comunitarios (Crear)
 	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
@@ -183,6 +186,7 @@ type serviceHandlers struct {
 	imageHandler          *handlers.ImageHandler
 	audioHandler          *handlers.AudioHandler
 	pdfHandler            *handlers.PDFHandler
+	videoHandler          *handlers.VideoHandler
 }
 
 // initializeHandlers crea e inicializa todas las instancias de handlers necesarias
@@ -191,6 +195,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 	imageUploadService := services.NewImageUploadService(db, cfg)
 	audioUploadService := services.NewAudioUploadService(db, cfg)
 	pdfUploadService := services.NewPDFUploadService(db, cfg)
+	videoUploadService := services.NewVideoUploadService(db, cfg)
 
 	return serviceHandlers{
 		authHandler:           handlers.NewAuthHandler(db, cfg),
@@ -203,6 +208,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		imageHandler:          handlers.NewImageHandler(imageUploadService, cfg),
 		audioHandler:          handlers.NewAudioHandler(audioUploadService, cfg),
 		pdfHandler:            handlers.NewPDFHandler(pdfUploadService, cfg),
+		videoHandler:          handlers.NewVideoHandler(videoUploadService, db, cfg),
 	}
 }
 
