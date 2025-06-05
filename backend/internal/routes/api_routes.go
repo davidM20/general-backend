@@ -69,7 +69,7 @@ const (
 	// Rutas de autenticación
 	AuthPath         = "/login"
 	RegisterBasePath = "/register"
-	RegisterStep1    = RegisterBasePath + "/step1"
+	RegisterStep1    = RegisterBasePath
 	RegisterStep2    = RegisterBasePath + "/step2"
 	RegisterStep3    = RegisterBasePath + "/step3"
 
@@ -96,6 +96,9 @@ const (
 
 	// Rutas de multimedia
 	MediaUploadPath = "/media/upload"
+
+	// Rutas de Eventos Comunitarios
+	CommunityEventsPath = "/community-events"
 
 	// Rutas de sistema
 	HealthPath = "/health"
@@ -135,6 +138,9 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	// Rutas de multimedia
 	setupProtectedRoute(protected, MediaUploadPath, handlers.mediaHandler.UploadMedia, http.MethodPost)
 
+	// Rutas de Eventos Comunitarios (Crear)
+	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
+
 	// TODO: Implementar estas rutas cuando estén disponibles:
 	// - GET /users/{userID:[0-9]+} - Ver perfil de otro usuario
 	// - PUT /users/me - Actualizar perfil
@@ -146,23 +152,25 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 
 // Estructura para agrupar todos los handlers y facilitar su paso a las funciones
 type serviceHandlers struct {
-	authHandler       *handlers.AuthHandler
-	userHandler       *handlers.UserHandler
-	enterpriseHandler *handlers.EnterpriseHandler
-	miscHandler       *handlers.MiscHandler
-	mediaHandler      *handlers.MediaHandler
-	categoryHandler   *handlers.CategoryHandler
+	authHandler           *handlers.AuthHandler
+	userHandler           *handlers.UserHandler
+	enterpriseHandler     *handlers.EnterpriseHandler
+	miscHandler           *handlers.MiscHandler
+	mediaHandler          *handlers.MediaHandler
+	categoryHandler       *handlers.CategoryHandler
+	communityEventHandler *handlers.CommunityEventHandler
 }
 
 // initializeHandlers crea e inicializa todas las instancias de handlers necesarias
 func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 	return serviceHandlers{
-		authHandler:       handlers.NewAuthHandler(db, cfg),
-		userHandler:       handlers.NewUserHandler(db),
-		enterpriseHandler: handlers.NewEnterpriseHandler(db),
-		miscHandler:       handlers.NewMiscHandler(db),
-		mediaHandler:      handlers.NewMediaHandler(db, cfg),
-		categoryHandler:   handlers.NewCategoryHandler(),
+		authHandler:           handlers.NewAuthHandler(db, cfg),
+		userHandler:           handlers.NewUserHandler(db),
+		enterpriseHandler:     handlers.NewEnterpriseHandler(db),
+		miscHandler:           handlers.NewMiscHandler(db),
+		mediaHandler:          handlers.NewMediaHandler(db, cfg),
+		categoryHandler:       handlers.NewCategoryHandler(),
+		communityEventHandler: handlers.NewCommunityEventHandler(db, cfg),
 	}
 }
 

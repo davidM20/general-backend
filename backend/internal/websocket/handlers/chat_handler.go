@@ -135,11 +135,3 @@ func HandleGetChatHistory(conn *customws.Connection[wsmodels.WsUserData], msg ty
 	logger.Successf("HANDLER_CHAT", "Historial de chat %s enviado a user %d. PID respuesta: %s", historyPayload.ChatID, conn.ID, responseMsg.PID)
 	return nil
 }
-
-// Helper function for unsupported resource error
-func handleUnsupportedResource(conn *customws.Connection[wsmodels.WsUserData], pid, action, resource string) error {
-	errMsg := fmt.Sprintf("Recurso '%s' no soportado para la acción '%s'", resource, action)
-	logger.Warn("HANDLER_DATA", errMsg)
-	conn.SendErrorNotification(pid, 400, errMsg)
-	return errors.New(errMsg)
-}

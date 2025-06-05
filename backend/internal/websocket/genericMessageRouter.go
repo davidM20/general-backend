@@ -62,6 +62,8 @@ REGLAS Y GUÍA PARA MODIFICAR EL ROUTER DE MENSAJES WEBSOCKET
    - friend:
      * accept_request: Aceptar solicitud de amistad
      * reject_request: Rechazar solicitud de amistad
+   - feed:
+     * get_list: Obtener lista de items del feed
 
 8. ESTRUCTURA DE PAYLOAD:
    - Para chat/get_history:
@@ -86,6 +88,8 @@ REGLAS Y GUÍA PARA MODIFICAR EL ROUTER DE MENSAJES WEBSOCKET
        "notificationId": string,
        "timestamp": string
      }
+   - Para feed/get_list:
+     No se requiere payload en "data". El servidor devolverá la lista de items del feed.
 */
 
 // DataRequestPayload define la estructura esperada para los mensajes de data_request
@@ -138,6 +142,12 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 			return handlers.HandleRejectFriendRequest(conn, msg)
 		},
 	},
+	// Feed: Manejo de items del feed
+	"feed": {
+		"get_list": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleGetFeedList(conn, msg)
+		},
+	},
 }
 
 // HandleDataRequest es el punto de entrada principal para procesar mensajes de data_request.
@@ -171,9 +181,11 @@ func parseRequestPayload(msg types.ClientToServerMessage) (DataRequestPayload, e
 	var requestData DataRequestPayload
 	payloadBytes, err := json.Marshal(msg.Payload)
 	if err != nil {
+		logger.Warnf("HANDLER_DATA", "Error marshalling data_request payload para PID %s, UserID %d: %v", msg.PID, msg.TargetUserID, err)
 		return requestData, fmt.Errorf("error marshalling data_request payload: %w", err)
 	}
 	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
+		logger.Warnf("HANDLER_DATA", "Error unmarshalling data_request payload para PID %s, UserID %d: %v. Payload: %s", msg.PID, msg.TargetUserID, err, string(payloadBytes))
 		return requestData, fmt.Errorf("error unmarshalling data_request payload: %w", err)
 	}
 	return requestData, nil
@@ -195,7 +207,7 @@ func handlePing(conn *customws.Connection[wsmodels.WsUserData], msg types.Client
 	}
 
 	if err := conn.SendMessage(ackMsg); err != nil {
-		logger.Warnf("HANDLER_DATA", "Error enviando pong (ServerAck) a UserID %d: %v", conn.ID, err)
+		logger.Warnf("HANDLER_DATA", "Error enviando pong (ServerAck) a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
 		return err
 	}
 
@@ -278,7 +290,7 @@ func getHandler(resource, action string) (ResourceHandler, bool) {
 // Envía una notificación de error al cliente.
 func handleMissingResource(conn *customws.Connection[wsmodels.WsUserData], pid string, action string) error {
 	errMsg := fmt.Sprintf("Recurso no especificado para la acción '%s'", action)
-	logger.Warn("HANDLER_DATA", errMsg)
+	logger.Warnf("HANDLER_DATA", "Missing resource for action '%s'. UserID: %d, PID: %s", action, conn.ID, pid)
 	conn.SendErrorNotification(pid, 400, errMsg)
 	return errors.New(errMsg)
 }

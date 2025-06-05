@@ -199,14 +199,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	println("hashedPassword: ", hashedPassword, "req.Password: ", req.Password)
-
-	// if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password)); err != nil {
-	// 	http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-	// 	return
-	// }
-
-	if (hashedPassword) != (req.Password) {
+	// Compara la contraseña ingresada con la contraseña hasheada almacenada
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password)); err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -321,7 +315,7 @@ func (h *AuthHandler) VerifyPasswordReset(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verificar que el código sea válido y no haya expirado
-	userID, valid, err := verifyResetCode(h.DB, code)
+	_, valid, err := verifyResetCode(h.DB, code)
 	if err != nil {
 		logger.Errorf("RESET_PASSWORD", "Error verifying code: %v", err)
 		http.Error(w, "Error verifying code", http.StatusInternalServerError)
@@ -334,8 +328,8 @@ func (h *AuthHandler) VerifyPasswordReset(w http.ResponseWriter, r *http.Request
 	}
 
 	// Redirigir al frontend con el código para completar el proceso
-	redirectURL := fmt.Sprintf("%s/reset-password/complete?code=%s&userId=%d",
-		h.Cfg.FrontendURL, code, userID)
+	redirectURL := fmt.Sprintf("%s/reset-password/complete?code=%s",
+		h.Cfg.FrontendURL, code)
 
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
@@ -345,7 +339,6 @@ func (h *AuthHandler) CompletePasswordReset(w http.ResponseWriter, r *http.Reque
 	// Decodificar el cuerpo de la solicitud
 	var req struct {
 		Code        string `json:"code"`
-		UserID      int64  `json:"userId"`
 		NewPassword string `json:"newPassword"`
 	}
 
@@ -354,7 +347,7 @@ func (h *AuthHandler) CompletePasswordReset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if req.Code == "" || req.NewPassword == "" || req.UserID == 0 {
+	if req.Code == "" || req.NewPassword == "" {
 		http.Error(w, "Missing required fields", http.StatusBadRequest)
 		return
 	}
@@ -367,7 +360,7 @@ func (h *AuthHandler) CompletePasswordReset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if !valid || userID != req.UserID {
+	if !valid {
 		http.Error(w, "Invalid or expired code", http.StatusBadRequest)
 		return
 	}

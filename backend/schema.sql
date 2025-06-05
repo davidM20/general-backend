@@ -95,7 +95,7 @@ Birthdate DATE,
 Picture VARCHAR(255),
 DegreeId BIGINT,
 UniversityId BIGINT,
-RoleId INT,
+RoleId INT,  -- el rol determina si es un estudiante o una empresa
 StatusAuthorizedId INT,
 Summary VARCHAR(255),
 Address VARCHAR(255),
@@ -300,6 +300,7 @@ ExpectedEndDate DATE,
 FOREIGN KEY (PersonID) REFERENCES User(Id)
 );
 
+-- Tabla de Notificaciones no de eventos
 CREATE TABLE IF NOT EXISTS Event (
 Id BIGINT AUTO_INCREMENT PRIMARY KEY,
 EventType VARCHAR(50) NOT NULL,
@@ -341,3 +342,35 @@ EventId BIGINT,
 Description VARCHAR(255),
 FOREIGN KEY (EventId) REFERENCES Event(Id)
 );
+
+-- Nueva tabla para Eventos Comunitarios del Feed
+CREATE TABLE IF NOT EXISTS CommunityEvent (
+    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    Title VARCHAR(255) NOT NULL,
+    Description TEXT,
+    EventDate DATETIME NOT NULL,                -- Fecha y hora del evento
+    Location VARCHAR(255),
+    Capacity INT NULL,                          -- Nuevo: Capacidad del evento
+    Price DECIMAL(10, 2) NULL,                -- Nuevo: Precio del evento
+    Tags JSON NULL,                             -- Nuevo: Etiquetas del evento (almacenadas como JSON array)
+    OrganizerCompanyName VARCHAR(255),          -- Nombre de la empresa organizadora (texto libre)
+    OrganizerUserId BIGINT,                     -- FK a User(Id) si el organizador es una empresa registrada en tu plataforma
+    OrganizerLogoUrl VARCHAR(255),              -- URL del logo del organizador
+    ImageUrl VARCHAR(255),                      -- URL de la imagen principal del evento
+    CreatedByUserId BIGINT NOT NULL,            -- Usuario de tu plataforma que publicó este evento
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (OrganizerUserId) REFERENCES User(Id) ON DELETE SET NULL,
+    FOREIGN KEY (CreatedByUserId) REFERENCES User(Id) ON DELETE CASCADE
+);
+
+-- Índices para CommunityEvent
+CREATE INDEX idx_community_event_date ON CommunityEvent(EventDate);
+CREATE INDEX idx_community_event_created_at ON CommunityEvent(CreatedAt);
+CREATE INDEX idx_community_event_organizer_user ON CommunityEvent(OrganizerUserId);
+CREATE INDEX idx_community_event_created_by ON CommunityEvent(CreatedByUserId);
+
+-- Comandos ALTER TABLE para aplicar estos cambios a una tabla existente:
+ALTER TABLE CommunityEvent ADD COLUMN Capacity INT NULL;
+ALTER TABLE CommunityEvent ADD COLUMN Price DECIMAL(10, 2) NULL;
+ALTER TABLE CommunityEvent ADD COLUMN Tags JSON NULL;

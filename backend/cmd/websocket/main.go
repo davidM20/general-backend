@@ -15,6 +15,7 @@ import (
 	internalWs "github.com/davidM20/micro-service-backend-go.git/internal/websocket"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/admin"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/auth"
+	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/handlers"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/services"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
@@ -57,6 +58,11 @@ func main() {
 	services.InitializeChatService(dbConn)
 	services.InitializeNotificationService(dbConn)
 	services.InitializeProfileService(dbConn)
+
+	// Inicializar FeedService y FeedHandler
+	feedSvc := services.NewFeedService(dbConn) // Crear y asignar la instancia
+	handlers.InitializeFeedHandler(feedSvc)    // Pasar la instancia al inicializador del handler
+	logger.Info("MAIN", "FeedService y FeedHandler inicializados.")
 
 	// Configurar el paquete customws
 	wsConfig := types.DefaultConfig()
