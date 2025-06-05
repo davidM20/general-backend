@@ -96,10 +96,11 @@ const (
 	DegreesPath       = "/degrees/{universityID:[0-9]+}"
 
 	// Rutas de multimedia
-	MediaUploadPath = "/media/upload"  // Ruta genérica existente
-	ImageUploadPath = "/images/upload" // Específica para imágenes
-	AudioUploadPath = "/audios/upload" // Específica para audios
-	PDFUploadPath   = "/pdfs/upload"   // Específica para PDFs
+	MediaUploadPath = "/media/upload"           // Ruta genérica existente
+	ImageUploadPath = "/images/upload"          // Específica para imágenes
+	AudioUploadPath = "/audios/upload"          // Específica para audios
+	PDFUploadPath   = "/pdfs/upload"            // Específica para PDFs
+	ImageViewPath   = "/images/view/{filename}" // Para visualizar imágenes con token en query param
 
 	// Rutas de Eventos Comunitarios
 	CommunityEventsPath = "/community-events"
@@ -123,6 +124,9 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupPublicEnterpriseRoutes(api, handlers.enterpriseHandler)
 	setupPublicCategoryRoutes(api, handlers.categoryHandler)
 	setupPublicMiscRoutes(api, handlers.miscHandler)
+
+	// Ruta para visualización de imágenes (autenticación especial vía query param)
+	api.HandleFunc(ImageViewPath, handlers.imageHandler.ViewImage).Methods(http.MethodGet)
 
 	// Configurar rutas protegidas (requieren autenticación JWT)
 	protected := api.PathPrefix("/").Subrouter()
@@ -188,7 +192,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		mediaHandler:          handlers.NewMediaHandler(db, cfg),
 		categoryHandler:       handlers.NewCategoryHandler(),
 		communityEventHandler: handlers.NewCommunityEventHandler(db, cfg),
-		imageHandler:          handlers.NewImageHandler(imageUploadService),
+		imageHandler:          handlers.NewImageHandler(imageUploadService, cfg),
 		audioHandler:          handlers.NewAudioHandler(audioUploadService),
 		pdfHandler:            handlers.NewPDFHandler(pdfUploadService),
 	}
