@@ -114,18 +114,6 @@ type Contact struct {
 	ChatId    string `json:"chat_id" db:"ChatId"`
 }
 
-// Multimedia defines the structure for the Multimedia table.
-type Multimedia struct {
-	Id        string    `json:"id" db:"Id"`
-	Type      string    `json:"type" db:"Type"` // e.g., image, video, audio
-	Ratio     float32   `json:"ratio" db:"Ratio"`
-	UserId    int64     `json:"user_id" db:"UserId"`
-	FileName  string    `json:"file_name" db:"FileName"` // Original or unique generated name? Assume unique.
-	CreateAt  time.Time `json:"create_at" db:"CreateAt"`
-	ContentId string    `json:"content_id" db:"ContentId"` // ID for the content in storage
-	ChatId    string    `json:"chat_id" db:"ChatId"`
-}
-
 // Session defines the structure for the Session table.
 type Session struct {
 	Id      int64  `json:"id" db:"Id"`

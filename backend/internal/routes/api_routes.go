@@ -58,6 +58,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"     // Importar config
 	"github.com/davidM20/micro-service-backend-go.git/internal/handlers"   // Crearemos este paquete
 	"github.com/davidM20/micro-service-backend-go.git/internal/middleware" // Importar middleware
+	"github.com/davidM20/micro-service-backend-go.git/internal/services"   // Necesario para inicializar ImageUploadService
 	"github.com/gorilla/mux"
 )
 
@@ -95,7 +96,10 @@ const (
 	DegreesPath       = "/degrees/{universityID:[0-9]+}"
 
 	// Rutas de multimedia
-	MediaUploadPath = "/media/upload"
+	MediaUploadPath = "/media/upload"  // Ruta genérica existente
+	ImageUploadPath = "/images/upload" // Específica para imágenes
+	AudioUploadPath = "/audios/upload" // Específica para audios
+	PDFUploadPath   = "/pdfs/upload"   // Específica para PDFs
 
 	// Rutas de Eventos Comunitarios
 	CommunityEventsPath = "/community-events"
@@ -136,7 +140,12 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupProtectedRoute(protected, CategoriesPath, handlers.categoryHandler.AddCategory, http.MethodPost)
 
 	// Rutas de multimedia
+	// Mantener la ruta genérica de media si todavía se usa para otros tipos
 	setupProtectedRoute(protected, MediaUploadPath, handlers.mediaHandler.UploadMedia, http.MethodPost)
+	// Nueva ruta específica para subida de imágenes
+	setupProtectedRoute(protected, ImageUploadPath, handlers.imageHandler.UploadImage, http.MethodPost)
+	setupProtectedRoute(protected, AudioUploadPath, handlers.audioHandler.UploadAudio, http.MethodPost)
+	setupProtectedRoute(protected, PDFUploadPath, handlers.pdfHandler.UploadPDF, http.MethodPost)
 
 	// Rutas de Eventos Comunitarios (Crear)
 	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
@@ -159,10 +168,18 @@ type serviceHandlers struct {
 	mediaHandler          *handlers.MediaHandler
 	categoryHandler       *handlers.CategoryHandler
 	communityEventHandler *handlers.CommunityEventHandler
+	imageHandler          *handlers.ImageHandler
+	audioHandler          *handlers.AudioHandler
+	pdfHandler            *handlers.PDFHandler
 }
 
 // initializeHandlers crea e inicializa todas las instancias de handlers necesarias
 func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
+	// Inicializar servicios primero si los handlers dependen de ellos
+	imageUploadService := services.NewImageUploadService(db, cfg)
+	audioUploadService := services.NewAudioUploadService(db, cfg)
+	pdfUploadService := services.NewPDFUploadService(db, cfg)
+
 	return serviceHandlers{
 		authHandler:           handlers.NewAuthHandler(db, cfg),
 		userHandler:           handlers.NewUserHandler(db),
@@ -171,6 +188,9 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		mediaHandler:          handlers.NewMediaHandler(db, cfg),
 		categoryHandler:       handlers.NewCategoryHandler(),
 		communityEventHandler: handlers.NewCommunityEventHandler(db, cfg),
+		imageHandler:          handlers.NewImageHandler(imageUploadService),
+		audioHandler:          handlers.NewAudioHandler(audioUploadService),
+		pdfHandler:            handlers.NewPDFHandler(pdfUploadService),
 	}
 }
 
@@ -184,12 +204,15 @@ func setupHealthRoutes(router *mux.Router) {
 
 // setupPublicAuthRoutes configura las rutas públicas de autenticación y registro
 func setupPublicAuthRoutes(router *mux.Router, authHandler *handlers.AuthHandler) {
-	router.HandleFunc(RegisterStep1, authHandler.Register).Methods(http.MethodPost)
+
+	// registro inicial
+	router.HandleFunc(RegisterBasePath, authHandler.Register).Methods(http.MethodPost)
+
+	// Rutas de autenticación
 	router.HandleFunc(AuthPath, authHandler.Login).Methods(http.MethodPost)
 
 	// Rutas para recuperación de contraseña
 	router.HandleFunc(ResetPasswordRequest, authHandler.RequestPasswordReset).Methods(http.MethodPost)
-	router.HandleFunc(ResetPasswordVerify, authHandler.VerifyPasswordReset).Methods(http.MethodGet)
 	router.HandleFunc(ResetPasswordComplete, authHandler.CompletePasswordReset).Methods(http.MethodPost)
 
 	// Nota: Los pasos 2 y 3 del registro ahora son rutas protegidas
