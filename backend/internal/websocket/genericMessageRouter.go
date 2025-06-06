@@ -166,6 +166,27 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 		"all":       handleSearchAll,
 		"graduates": handleSearchGraduates,
 	},
+	// CV: Manejo del currículum vitae
+	"cv": {
+		"set_skill": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleSetSkill(conn, msg)
+		},
+		"set_language": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleSetLanguage(conn, msg)
+		},
+		"set_work_experience": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleSetWorkExperience(conn, msg)
+		},
+		"set_certification": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleSetCertification(conn, msg)
+		},
+		"set_project": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleSetProject(conn, msg)
+		},
+		"get": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleGetCV(conn, msg)
+		},
+	},
 }
 
 // HandleDataRequest es el punto de entrada principal para procesar mensajes de data_request.

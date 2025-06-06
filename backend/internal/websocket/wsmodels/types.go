@@ -218,3 +218,13 @@ type MonthlyActivity struct {
 	Labels []string `json:"labels"` // Ej: ["Ene", "Feb", "Mar"]
 	Data   []int64  `json:"data"`
 }
+
+// Tipos de mensaje para el CV
+const (
+	MessageTypeSetSkill          = "set_skill"
+	MessageTypeSetLanguage       = "set_language"
+	MessageTypeSetWorkExperience = "set_work_experience"
+	MessageTypeSetCertification  = "set_certification"
+	MessageTypeSetProject        = "set_project"
+	MessageTypeGetCV             = "get_cv"
+)

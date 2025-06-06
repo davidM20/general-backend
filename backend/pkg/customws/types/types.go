@@ -83,6 +83,14 @@ const (
 	// --- Mensajes del Servidor al Cliente ---
 	MessageTypeNewMessage  MessageType = "new_message"
 	MessageTypeProfileData MessageType = "profile_data"
+
+	// Tipos de mensaje para el CV
+	MessageTypeSetSkill          = "set_skill"
+	MessageTypeSetLanguage       = "set_language"
+	MessageTypeSetWorkExperience = "set_work_experience"
+	MessageTypeSetCertification  = "set_certification"
+	MessageTypeSetProject        = "set_project"
+	MessageTypeGetCV             = "get_cv"
 )
 
 // ClientToServerMessage es la estructura para mensajes enviados por el cliente al servidor.
