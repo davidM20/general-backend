@@ -109,7 +109,8 @@ const (
 	VideoVariantPath        = "/videos/stream/{contentID}/{quality}/{fileName:.+}"
 
 	// Rutas de Eventos Comunitarios
-	CommunityEventsPath = "/community-events"
+	CommunityEventsPath   = "/community-events"
+	MyCommunityEventsPath = CommunityEventsPath + "/my-events"
 
 	// Rutas de sistema
 	HealthPath = "/health"
@@ -164,6 +165,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 
 	// Rutas de Eventos Comunitarios (Crear)
 	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
+	setupProtectedRoute(protected, MyCommunityEventsPath, handlers.communityEventHandler.GetMyCommunityEvents, http.MethodGet)
 
 	// TODO: Implementar estas rutas cuando estén disponibles:
 	// - GET /users/{userID:[0-9]+} - Ver perfil de otro usuario

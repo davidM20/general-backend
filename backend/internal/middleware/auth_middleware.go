@@ -54,7 +54,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 
 			// Agregar información del usuario al contexto usando claves tipadas
 			ctx := context.WithValue(r.Context(), UserIDContextKey, claims.UserID)
-			ctx = context.WithValue(ctx, RoleIDContextKey, claims.RoleID)
+			ctx = context.WithValue(ctx, RoleIDContextKey, int64(claims.RoleID))
 
 			logger.Infof("AUTH", "AuthMiddleware: User %d authenticated with Role %d", claims.UserID, claims.RoleID)
 

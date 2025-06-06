@@ -67,3 +67,85 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 
 	return newEventId, nil
 }
+
+// GetCommunityEventsByUserIDPaginated recupera una lista paginada de eventos creados por un usuario específico.
+// También devuelve el recuento total de eventos para ese usuario para la paginación.
+func GetCommunityEventsByUserIDPaginated(db *sql.DB, userID int64, limit, offset int) ([]models.CommunityEvent, int, error) {
+	// Primero, la consulta para obtener el recuento total
+	var total int
+	countQuery := "SELECT COUNT(*) FROM CommunityEvent WHERE CreatedByUserId = ?"
+	err := db.QueryRow(countQuery, userID).Scan(&total)
+	if err != nil {
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error counting community events for user ID %d: %v", userID, err)
+		return nil, 0, err
+	}
+
+	// Si no hay eventos, no necesitamos hacer la segunda consulta
+	if total == 0 {
+		return []models.CommunityEvent{}, 0, nil
+	}
+
+	// Ahora, la consulta para obtener los eventos paginados
+	query := `
+        SELECT 
+            Id, Title, Description, EventDate, Location, Capacity, Price, Tags,
+            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl,
+            CreatedByUserId, CreatedAt, UpdatedAt
+        FROM CommunityEvent 
+        WHERE CreatedByUserId = ?
+        ORDER BY CreatedAt DESC
+        LIMIT ? OFFSET ?
+    `
+	rows, err := db.Query(query, userID, limit, offset)
+	if err != nil {
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error fetching paginated community events for user ID %d: %v", userID, err)
+		return nil, total, err
+	}
+	defer rows.Close()
+
+	var events []models.CommunityEvent
+	for rows.Next() {
+		var event models.CommunityEvent
+		var tagsJSON sql.NullString
+		err := rows.Scan(
+			&event.Id,
+			&event.Title,
+			&event.Description,
+			&event.EventDate,
+			&event.Location,
+			&event.Capacity,
+			&event.Price,
+			&tagsJSON,
+			&event.OrganizerCompanyName,
+			&event.OrganizerUserId,
+			&event.OrganizerLogoUrl,
+			&event.ImageUrl,
+			&event.CreatedByUserId,
+			&event.CreatedAt,
+			&event.UpdatedAt,
+		)
+		if err != nil {
+			logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error scanning community event row for user ID %d: %v", userID, err)
+			continue // O podríamos devolver el error y detener el proceso
+		}
+
+		// Deserializar las etiquetas si no son nulas
+		if tagsJSON.Valid {
+			event.Tags, err = models.TagsFromJSON(tagsJSON)
+			if err != nil {
+				logger.Warnf("COMMUNITY_EVENT_QUERIES", "Could not unmarshal tags for event ID %d: %v", event.Id, err)
+				// No devolver un error, simplemente dejar las etiquetas como nil y continuar
+				event.Tags = nil
+			}
+		}
+
+		events = append(events, event)
+	}
+
+	if err = rows.Err(); err != nil {
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error after iterating through community event rows for user ID %d: %v", userID, err)
+		return nil, total, err
+	}
+
+	return events, total, nil
+}
