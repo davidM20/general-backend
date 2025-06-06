@@ -95,7 +95,7 @@ Birthdate DATE,
 Picture VARCHAR(255),
 DegreeId BIGINT,
 UniversityId BIGINT,
-RoleId INT,  -- el rol determina si es un estudiante o una empresa
+RoleId INT,  -- el rol determina si es un estudiante o una empresa (1: estudiante, 2: egresado 3: empresa)
 StatusAuthorizedId INT,
 Summary VARCHAR(255),
 Address VARCHAR(255),

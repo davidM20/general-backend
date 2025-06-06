@@ -13,10 +13,10 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 	query := `
         INSERT INTO CommunityEvent (
             Title, Description, EventDate, Location, Capacity, Price, Tags, 
-            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, 
+            OrganizerCompanyName, OrganizerUserId, ImageUrl, 
             CreatedByUserId, CreatedAt, UpdatedAt
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
 	now := time.Now()
 
@@ -32,7 +32,6 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 	}
 	organizerCompanyName := models.ToNullString(eventData.OrganizerCompanyName)
 	organizerUserID := models.ToNullInt64(eventData.OrganizerUserId)
-	organizerLogoURL := models.ToNullString(eventData.OrganizerLogoUrl)
 	imageURL := models.ToNullString(eventData.ImageUrl)
 
 	result, err := MeasureQueryWithResult(func() (interface{}, error) {
@@ -47,7 +46,6 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 			tagsJSON,
 			organizerCompanyName,
 			organizerUserID,
-			organizerLogoURL,
 			imageURL,
 			createdByUserID,
 			now, // CreatedAt

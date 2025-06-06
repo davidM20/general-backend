@@ -61,7 +61,6 @@ func (s *CommunityEventService) CreateCommunityEvent(eventData models.CommunityE
 		Tags:                 eventData.Tags, // Directamente desde el request, ya es []string
 		OrganizerCompanyName: models.ToNullString(eventData.OrganizerCompanyName),
 		OrganizerUserId:      models.ToNullInt64(eventData.OrganizerUserId),
-		OrganizerLogoUrl:     models.ToNullString(eventData.OrganizerLogoUrl),
 		ImageUrl:             models.ToNullString(eventData.ImageUrl),
 		CreatedByUserId:      createdByUserID,
 		CreatedAt:            time.Now(), // Aproximación, la DB tiene el valor exacto

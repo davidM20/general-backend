@@ -147,7 +147,7 @@ func GetRecentCommunityEventsForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem
 			ce.Location,
 			ce.ImageUrl,
 			ce.OrganizerCompanyName,
-			ce.OrganizerLogoUrl,
+			COALESCE(u.Picture, '') as OrganizerLogo, -- Usar la imagen de perfil del usuario
 			ce.CreatedAt,
 			COALESCE(u.FirstName, '') as CreatorFirstName,
 			COALESCE(u.LastName, '') as CreatorLastName
@@ -181,7 +181,7 @@ func GetRecentCommunityEventsForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem
 			Data: wsmodels.EventFeedData{
 				Title:       title.String,
 				Company:     organizerCompany.String,
-				CompanyLogo: organizerLogo.String,
+				CompanyLogo: organizerLogo.String, // Esto ahora será u.Picture
 				Date:        eventDate.Format("Jan 02, 2006"),
 				Location:    location.String,
 				Image:       imageUrl.String,

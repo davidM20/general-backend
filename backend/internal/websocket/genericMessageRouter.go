@@ -64,6 +64,11 @@ REGLAS Y GUÍA PARA MODIFICAR EL ROUTER DE MENSAJES WEBSOCKET
      * reject_request: Rechazar solicitud de amistad
    - feed:
      * get_list: Obtener lista de items del feed
+   - search:
+     * users: Buscar usuarios
+     * companies: Buscar empresas
+     * all: Buscar usuarios y empresas
+     * graduates: Buscar egresados
 
 8. ESTRUCTURA DE PAYLOAD:
    - Para chat/get_history:
@@ -90,6 +95,12 @@ REGLAS Y GUÍA PARA MODIFICAR EL ROUTER DE MENSAJES WEBSOCKET
      }
    - Para feed/get_list:
      No se requiere payload en "data". El servidor devolverá la lista de items del feed.
+   - Para search/users, search/companies, search/all y search/graduates:
+     {
+       "query": string,
+       "limit": number (opcional),
+       "offset": number (opcional)
+     }
 */
 
 // DataRequestPayload define la estructura esperada para los mensajes de data_request
@@ -147,6 +158,13 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 		"get_list": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
 			return handlers.HandleGetFeedList(conn, msg)
 		},
+	},
+	// Search: Búsqueda de usuarios y empresas
+	"search": {
+		"users":     handleSearchUsers,
+		"companies": handleSearchCompanies,
+		"all":       handleSearchAll,
+		"graduates": handleSearchGraduates,
 	},
 }
 
@@ -260,6 +278,46 @@ func handleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 		Payload: requestData.Data,
 	}
 	return handlers.HandleSendChatMessage(conn, subHandlerMessage)
+}
+
+// handleSearchUsers procesa la búsqueda de usuarios.
+func handleSearchUsers(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	subHandlerMessage := types.ClientToServerMessage{
+		PID:     msg.PID,
+		Type:    msg.Type,
+		Payload: requestData.Data,
+	}
+	return handlers.HandleSearchUsers(conn, subHandlerMessage)
+}
+
+// handleSearchCompanies procesa la búsqueda de empresas.
+func handleSearchCompanies(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	subHandlerMessage := types.ClientToServerMessage{
+		PID:     msg.PID,
+		Type:    msg.Type,
+		Payload: requestData.Data,
+	}
+	return handlers.HandleSearchCompanies(conn, subHandlerMessage)
+}
+
+// handleSearchAll procesa la búsqueda de usuarios y empresas.
+func handleSearchAll(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	subHandlerMessage := types.ClientToServerMessage{
+		PID:     msg.PID,
+		Type:    msg.Type,
+		Payload: requestData.Data,
+	}
+	return handlers.HandleSearchAll(conn, subHandlerMessage)
+}
+
+// handleSearchGraduates procesa la búsqueda de egresados.
+func handleSearchGraduates(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+	subHandlerMessage := types.ClientToServerMessage{
+		PID:     msg.PID,
+		Type:    msg.Type,
+		Payload: requestData.Data,
+	}
+	return handlers.HandleSearchGraduates(conn, subHandlerMessage)
 }
 
 // sendProcessingAck envía un ACK de procesamiento al cliente.

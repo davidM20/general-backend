@@ -38,7 +38,6 @@ type CommunityEventCreateRequest struct {
 	Tags                 []string  `json:"tags" validate:"omitempty,dive,min=1,max=50"` // Nuevo
 	OrganizerCompanyName *string   `json:"organizer_company_name"`
 	OrganizerUserId      *int64    `json:"organizer_user_id"` // Opcional
-	OrganizerLogoUrl     *string   `json:"organizer_logo_url"`
 	ImageUrl             *string   `json:"image_url"`
 }
 
