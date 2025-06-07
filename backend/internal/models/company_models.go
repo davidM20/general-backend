@@ -40,7 +40,6 @@ type CompanyEvent struct {
 	EventDate   time.Time `json:"event_date"`
 	Location    string    `json:"location"`
 	ImageURL    string    `json:"image_url,omitempty"`
-	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }

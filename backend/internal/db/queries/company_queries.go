@@ -59,8 +59,8 @@ func GetCompanyProfile(userID int64) (*models.CompanyProfile, error) {
 // GetEventsForCompany recupera la lista de eventos para una empresa.
 func GetEventsForCompany(companyID int64) ([]models.CompanyEvent, error) {
 	query := `
-        SELECT Id, Title, Description, EventDate, Location, ImageURL, Status, CreatedAt, UpdatedAt
-        FROM CommunityEvent WHERE created_by = ? ORDER BY EventDate DESC
+        SELECT Id, Title, Description, EventDate, Location, ImageURL, CreatedAt, UpdatedAt
+        FROM CommunityEvent WHERE CreatedByUserID = ? ORDER BY EventDate DESC
     `
 	rows, err := DB.Query(query, companyID)
 	if err != nil {
@@ -72,7 +72,7 @@ func GetEventsForCompany(companyID int64) ([]models.CompanyEvent, error) {
 	for rows.Next() {
 		var event models.CompanyEvent
 		var imageUrl sql.NullString
-		if err := rows.Scan(&event.ID, &event.Title, &event.Description, &event.EventDate, &event.Location, &imageUrl, &event.Status, &event.CreatedAt, &event.UpdatedAt); err != nil {
+		if err := rows.Scan(&event.ID, &event.Title, &event.Description, &event.EventDate, &event.Location, &imageUrl, &event.CreatedAt, &event.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("error al escanear evento: %w", err)
 		}
 		event.ImageURL = imageUrl.String
