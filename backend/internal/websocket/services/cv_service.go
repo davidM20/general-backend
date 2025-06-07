@@ -43,6 +43,11 @@ func (s *CVService) SetProject(project *models.Project) error {
 	return queries.SetProject(s.db, project)
 }
 
+// SetEducation establece la educación de un usuario.
+func (s *CVService) SetEducation(education *models.Education) error {
+	return queries.SetEducation(s.db, education)
+}
+
 // GetCV obtiene todo el CV de un usuario
 func (s *CVService) GetCV(personId int64) (*wsmodels.CurriculumVitae, error) {
 	return queries.GetCV(s.db, personId)

@@ -127,6 +127,24 @@ func SetProject(db *sql.DB, project *models.Project) error {
 	return nil
 }
 
+// SetEducation inserta o actualiza la educación de una persona.
+func SetEducation(db *sql.DB, education *models.Education) error {
+	query := `
+        INSERT INTO Education (PersonId, Institution, Degree, Campus, GraduationDate)
+        VALUES (?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+        Institution = VALUES(Institution),
+        Degree = VALUES(Degree),
+        Campus = VALUES(Campus),
+        GraduationDate = VALUES(GraduationDate)
+    `
+	_, err := db.Exec(query, education.PersonId, education.Institution, education.Degree, education.Campus, education.GraduationDate)
+	if err != nil {
+		return fmt.Errorf("error al insertar/actualizar educación: %w", err)
+	}
+	return nil
+}
+
 // GetCV obtiene todo el CV de un usuario
 func GetCV(db *sql.DB, personId int64) (*wsmodels.CurriculumVitae, error) {
 	cv := &wsmodels.CurriculumVitae{}

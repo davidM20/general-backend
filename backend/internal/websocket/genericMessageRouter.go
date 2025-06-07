@@ -183,8 +183,35 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 		"set_project": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
 			return handlers.HandleSetProject(conn, msg)
 		},
+		"set_education": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleSetEducation(conn, msg)
+		},
 		"get": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
 			return handlers.HandleGetCV(conn, msg)
+		},
+	},
+	// Profile: Manejo del perfil de usuario
+	"profile": {
+		"get_my": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleGetMyProfile(conn, msg)
+		},
+		"update_my": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			// Pasamos solo los datos relevantes al handler
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleUpdateMyProfile(conn, subHandlerMessage)
+		},
+		"get_user": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			// Pasamos solo los datos relevantes al handler
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleGetUserProfile(conn, subHandlerMessage)
 		},
 	},
 }
@@ -200,6 +227,14 @@ func HandleDataRequest(conn *customws.Connection[wsmodels.WsUserData], msg types
 	}
 	if requestData.Action == "ping" {
 		return handlePing(conn, msg)
+	}
+
+	// Enviar un ACK genérico para todas las data_request con PID
+	if msg.PID != "" {
+		status := fmt.Sprintf("processing_%s_%s", requestData.Resource, requestData.Action)
+		if err := sendProcessingAck(conn, msg.PID, status); err != nil {
+			logger.Warnf("HANDLER_DATA", "Error enviando ACK para %s/%s a UserID %d, PID %s: %v", requestData.Resource, requestData.Action, conn.ID, msg.PID, err)
+		}
 	}
 
 	if requestData.Resource == "" {
@@ -257,12 +292,6 @@ func handlePing(conn *customws.Connection[wsmodels.WsUserData], msg types.Client
 // handleDashboardInfo procesa las solicitudes de información del dashboard.
 // Envía un ACK inmediato y procesa la solicitud en una goroutine separada.
 func handleDashboardInfo(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
-	if msg.PID != "" {
-		if err := sendProcessingAck(conn, msg.PID, "processing_dashboard_info"); err != nil {
-			logger.Warnf("HANDLER_DATA", "Error enviando ACK para get_info/dashboard a UserID %d, PID %s: %v", conn.ID, msg.PID, err)
-		}
-	}
-
 	go func(currentConn *customws.Connection[wsmodels.WsUserData], originalMsg types.ClientToServerMessage) {
 		if err := handlers.HandleGetDashboardInfo(currentConn, originalMsg); err != nil {
 			logger.Errorf("HANDLER_DATA", "Error en goroutine HandleGetDashboardInfo para UserID %d, PID %s: %v", currentConn.ID, originalMsg.PID, err)

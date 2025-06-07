@@ -139,66 +139,66 @@ type Message struct {
 
 // Education defines the structure for the Education table.
 type Education struct {
-	Id             int64         `json:"id" db:"Id"`
-	PersonId       int64         `json:"person_id" db:"PersonId"`
-	Institution    string        `json:"institution" db:"Institution"`
-	Degree         string        `json:"degree" db:"Degree"`
-	Campus         string        `json:"campus" db:"Campus"`
-	GraduationDate sql.NullTime  `json:"graduation_date" db:"GraduationDate"`     // Handle NULL
-	CountryId      sql.NullInt64 `json:"country_id" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
-	CountryName    string        `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
+	Id             int64         `json:"ID" db:"Id"`
+	PersonId       int64         `json:"PersonId" db:"PersonId"`
+	Institution    string        `json:"Institution" db:"Institution"`
+	Degree         string        `json:"Degree" db:"Degree"`
+	Campus         string        `json:"Campus" db:"Campus"`
+	GraduationDate sql.NullTime  `json:"GraduationDate" db:"GraduationDate"`     // Handle NULL
+	CountryId      sql.NullInt64 `json:"CountryId" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
+	CountryName    string        `json:"CountryName,omitempty" db:"CountryName"` // Nuevo campo
 }
 
 // WorkExperience defines the structure for the WorkExperience table.
 type WorkExperience struct {
-	Id          int64         `json:"id" db:"Id"`
-	PersonId    int64         `json:"person_id" db:"PersonId"`
-	Company     string        `json:"company" db:"Company"`
-	Position    string        `json:"position" db:"Position"`
-	StartDate   sql.NullTime  `json:"start_date" db:"StartDate"` // Handle NULL
-	EndDate     sql.NullTime  `json:"end_date" db:"EndDate"`     // Handle NULL
-	Description string        `json:"description" db:"Description"`
-	CountryId   sql.NullInt64 `json:"country_id" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
-	CountryName string        `json:"country_name,omitempty" db:"CountryName"` // Nuevo campo
+	Id          int64         `json:"ID" db:"Id"`
+	PersonId    int64         `json:"PersonId" db:"PersonId"`
+	Company     string        `json:"Company" db:"Company"`
+	Position    string        `json:"Position" db:"Position"`
+	StartDate   sql.NullTime  `json:"StartDate" db:"StartDate"` // Handle NULL
+	EndDate     sql.NullTime  `json:"EndDate" db:"EndDate"`     // Handle NULL
+	Description string        `json:"Description" db:"Description"`
+	CountryId   sql.NullInt64 `json:"CountryId" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
+	CountryName string        `json:"CountryName,omitempty" db:"CountryName"` // Nuevo campo
 }
 
 // Certifications defines the structure for the Certifications table.
 type Certifications struct {
-	Id            int64        `json:"id" db:"Id"`
-	PersonId      int64        `json:"person_id" db:"PersonId"`
-	Certification string       `json:"certification" db:"Certification"`
-	Institution   string       `json:"institution" db:"Institution"`
-	DateObtained  sql.NullTime `json:"date_obtained" db:"DateObtained"` // Handle NULL
+	Id            int64        `json:"ID" db:"Id"`
+	PersonId      int64        `json:"PersonId" db:"PersonId"`
+	Certification string       `json:"Certification" db:"Certification"`
+	Institution   string       `json:"Institution" db:"Institution"`
+	DateObtained  sql.NullTime `json:"dateObtained" db:"DateObtained"` // Handle NULL
 }
 
 // Skills defines the structure for the Skills table.
 type Skills struct {
-	Id       int64  `json:"id" db:"Id"`
-	PersonId int64  `json:"person_id" db:"PersonId"`
-	Skill    string `json:"skill" db:"Skill"`
-	Level    string `json:"level" db:"Level"` // e.g., Basic, Intermediate, Advanced
+	Id       int64  `json:"ID" db:"Id"`
+	PersonId int64  `json:"PersonId" db:"PersonId"`
+	Skill    string `json:"Skill" db:"Skill"`
+	Level    string `json:"Level" db:"Level"` // e.g., Basic, Intermediate, Advanced
 }
 
 // Languages defines the structure for the Languages table.
 type Languages struct {
-	Id       int64  `json:"id" db:"Id"`
-	PersonId int64  `json:"person_id" db:"PersonId"`
-	Language string `json:"language" db:"Language"`
-	Level    string `json:"level" db:"Level"` // e.g., A1, A2, B1, B2, C1, C2, Native
+	Id       int64  `json:"ID" db:"Id"`
+	PersonId int64  `json:"PersonId" db:"PersonId"`
+	Language string `json:"Language" db:"Language"`
+	Level    string `json:"Level" db:"Level"` // e.g., A1, A2, B1, B2, C1, C2, Native
 }
 
 // Project defines the structure for the Project table.
 type Project struct {
-	Id              int64        `json:"id" db:"Id"`
-	PersonID        int64        `json:"person_id" db:"PersonID"`
-	Title           string       `json:"title" db:"Title"`
-	Role            string       `json:"role" db:"Role"`
-	Description     string       `json:"description" db:"Description"`
-	Company         string       `json:"company" db:"Company"`
-	Document        string       `json:"document" db:"Document"`
-	ProjectStatus   string       `json:"project_status" db:"ProjectStatus"`
-	StartDate       sql.NullTime `json:"start_date" db:"StartDate"`              // Handle NULL
-	ExpectedEndDate sql.NullTime `json:"expected_end_date" db:"ExpectedEndDate"` // Handle NULL
+	Id              int64        `json:"ID" db:"Id"`
+	PersonID        int64        `json:"PersonId" db:"PersonID"`
+	Title           string       `json:"Title" db:"Title"`
+	Role            string       `json:"Role" db:"Role"`
+	Description     string       `json:"Description" db:"Description"`
+	Company         string       `json:"Company" db:"Company"`
+	Document        string       `json:"Document" db:"Document"`
+	ProjectStatus   string       `json:"ProjectStatus" db:"ProjectStatus"`
+	StartDate       sql.NullTime `json:"StartDate" db:"StartDate"`             // Handle NULL
+	ExpectedEndDate sql.NullTime `json:"ExpectedEndDate" db:"ExpectedEndDate"` // Handle NULL
 }
 
 // Enterprise defines the structure for the Enterprise table.

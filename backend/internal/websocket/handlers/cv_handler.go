@@ -33,11 +33,20 @@ import (
 func HandleSetSkill(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("CV_HANDLER", "Estableciendo habilidad para UserID %d. PID: %s", conn.ID, msg.PID)
 
-	var skill models.Skills
+	var requestData struct {
+		Data models.Skills `json:"data"`
+	}
 	payloadBytes, _ := json.Marshal(msg.Payload)
-	if err := json.Unmarshal(payloadBytes, &skill); err != nil {
+	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
 		logger.Warnf("CV_HANDLER", "Error al decodificar payload de habilidad: %v", err)
 		conn.SendErrorNotification(msg.PID, 400, "Payload de habilidad inválido.")
+		return nil
+	}
+	skill := requestData.Data
+
+	if skill.Skill == "" || skill.Level == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_skill: campos vacíos. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Skill' y 'Level' no pueden estar vacíos.")
 		return nil
 	}
 
@@ -57,7 +66,7 @@ func HandleSetSkill(conn *customws.Connection[wsmodels.WsUserData], msg types.Cl
 	// Enviar confirmación
 	responseMsg := types.ServerToClientMessage{
 		PID:        conn.Manager().Callbacks().GeneratePID(),
-		Type:       "skill_set",
+		Type:       "set_skill_success",
 		FromUserID: 0,
 		Payload:    map[string]interface{}{"status": "success"},
 	}
@@ -73,11 +82,20 @@ func HandleSetSkill(conn *customws.Connection[wsmodels.WsUserData], msg types.Cl
 func HandleSetLanguage(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("CV_HANDLER", "Estableciendo idioma para UserID %d. PID: %s", conn.ID, msg.PID)
 
-	var language models.Languages
+	var requestData struct {
+		Data models.Languages `json:"data"`
+	}
 	payloadBytes, _ := json.Marshal(msg.Payload)
-	if err := json.Unmarshal(payloadBytes, &language); err != nil {
+	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
 		logger.Warnf("CV_HANDLER", "Error al decodificar payload de idioma: %v", err)
 		conn.SendErrorNotification(msg.PID, 400, "Payload de idioma inválido.")
+		return nil
+	}
+	language := requestData.Data
+
+	if language.Language == "" || language.Level == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_language: campos vacíos. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Language' y 'Level' no pueden estar vacíos.")
 		return nil
 	}
 
@@ -97,7 +115,7 @@ func HandleSetLanguage(conn *customws.Connection[wsmodels.WsUserData], msg types
 	// Enviar confirmación
 	responseMsg := types.ServerToClientMessage{
 		PID:        conn.Manager().Callbacks().GeneratePID(),
-		Type:       "language_set",
+		Type:       "set_language_success",
 		FromUserID: 0,
 		Payload:    map[string]interface{}{"status": "success"},
 	}
@@ -113,11 +131,20 @@ func HandleSetLanguage(conn *customws.Connection[wsmodels.WsUserData], msg types
 func HandleSetWorkExperience(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("CV_HANDLER", "Estableciendo experiencia laboral para UserID %d. PID: %s", conn.ID, msg.PID)
 
-	var experience models.WorkExperience
+	var requestData struct {
+		Data models.WorkExperience `json:"data"`
+	}
 	payloadBytes, _ := json.Marshal(msg.Payload)
-	if err := json.Unmarshal(payloadBytes, &experience); err != nil {
+	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
 		logger.Warnf("CV_HANDLER", "Error al decodificar payload de experiencia laboral: %v", err)
 		conn.SendErrorNotification(msg.PID, 400, "Payload de experiencia laboral inválido.")
+		return nil
+	}
+	experience := requestData.Data
+
+	if experience.Company == "" || experience.Position == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_work_experience: campos vacíos. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Company' y 'Position' no pueden estar vacíos.")
 		return nil
 	}
 
@@ -137,7 +164,7 @@ func HandleSetWorkExperience(conn *customws.Connection[wsmodels.WsUserData], msg
 	// Enviar confirmación
 	responseMsg := types.ServerToClientMessage{
 		PID:        conn.Manager().Callbacks().GeneratePID(),
-		Type:       "work_experience_set",
+		Type:       "set_work_experience_success",
 		FromUserID: 0,
 		Payload:    map[string]interface{}{"status": "success"},
 	}
@@ -153,11 +180,20 @@ func HandleSetWorkExperience(conn *customws.Connection[wsmodels.WsUserData], msg
 func HandleSetCertification(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("CV_HANDLER", "Estableciendo certificación para UserID %d. PID: %s", conn.ID, msg.PID)
 
-	var certification models.Certifications
+	var requestData struct {
+		Data models.Certifications `json:"data"`
+	}
 	payloadBytes, _ := json.Marshal(msg.Payload)
-	if err := json.Unmarshal(payloadBytes, &certification); err != nil {
+	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
 		logger.Warnf("CV_HANDLER", "Error al decodificar payload de certificación: %v", err)
 		conn.SendErrorNotification(msg.PID, 400, "Payload de certificación inválido.")
+		return nil
+	}
+	certification := requestData.Data
+
+	if certification.Certification == "" || certification.Institution == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_certification: campos vacíos. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Certification' y 'Institution' no pueden estar vacíos.")
 		return nil
 	}
 
@@ -177,7 +213,7 @@ func HandleSetCertification(conn *customws.Connection[wsmodels.WsUserData], msg 
 	// Enviar confirmación
 	responseMsg := types.ServerToClientMessage{
 		PID:        conn.Manager().Callbacks().GeneratePID(),
-		Type:       "certification_set",
+		Type:       "set_certification_success",
 		FromUserID: 0,
 		Payload:    map[string]interface{}{"status": "success"},
 	}
@@ -193,11 +229,20 @@ func HandleSetCertification(conn *customws.Connection[wsmodels.WsUserData], msg 
 func HandleSetProject(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof("CV_HANDLER", "Estableciendo proyecto para UserID %d. PID: %s", conn.ID, msg.PID)
 
-	var project models.Project
+	var requestData struct {
+		Data models.Project `json:"data"`
+	}
 	payloadBytes, _ := json.Marshal(msg.Payload)
-	if err := json.Unmarshal(payloadBytes, &project); err != nil {
+	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
 		logger.Warnf("CV_HANDLER", "Error al decodificar payload de proyecto: %v", err)
 		conn.SendErrorNotification(msg.PID, 400, "Payload de proyecto inválido.")
+		return nil
+	}
+	project := requestData.Data
+
+	if project.Title == "" || project.Role == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_project: campos vacíos. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Title' y 'Role' no pueden estar vacíos.")
 		return nil
 	}
 
@@ -217,13 +262,62 @@ func HandleSetProject(conn *customws.Connection[wsmodels.WsUserData], msg types.
 	// Enviar confirmación
 	responseMsg := types.ServerToClientMessage{
 		PID:        conn.Manager().Callbacks().GeneratePID(),
-		Type:       "project_set",
+		Type:       "set_project_success",
 		FromUserID: 0,
 		Payload:    map[string]interface{}{"status": "success"},
 	}
 
 	if err := conn.SendMessage(responseMsg); err != nil {
 		logger.Errorf("CV_HANDLER", "Error al enviar confirmación de proyecto: %v", err)
+	}
+
+	return nil
+}
+
+// HandleSetEducation maneja la solicitud para establecer una educación
+func HandleSetEducation(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
+	logger.Infof("CV_HANDLER", "Estableciendo educación para UserID %d. PID: %s", conn.ID, msg.PID)
+
+	var requestData struct {
+		Data models.Education `json:"data"`
+	}
+	payloadBytes, _ := json.Marshal(msg.Payload)
+	if err := json.Unmarshal(payloadBytes, &requestData); err != nil {
+		logger.Warnf("CV_HANDLER", "Error al decodificar payload de educación: %v", err)
+		conn.SendErrorNotification(msg.PID, 400, "Payload de educación inválido.")
+		return nil
+	}
+	education := requestData.Data
+
+	if education.Institution == "" || education.Degree == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_education: campos vacíos. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Institution' y 'Degree' no pueden estar vacíos.")
+		return nil
+	}
+
+	// Establecer el ID del usuario
+	education.PersonId = conn.ID
+
+	// Usar el servicio de CV
+	dbConn := db.GetDB()
+	cvService := services.NewCVService(dbConn)
+
+	if err := cvService.SetEducation(&education); err != nil {
+		logger.Errorf("CV_HANDLER", "Error al establecer educación: %v", err)
+		conn.SendErrorNotification(msg.PID, 500, "Error interno al establecer educación.")
+		return nil
+	}
+
+	// Enviar confirmación
+	responseMsg := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       "set_education_success",
+		FromUserID: 0,
+		Payload:    map[string]interface{}{"status": "success", "action": "set_education"},
+	}
+
+	if err := conn.SendMessage(responseMsg); err != nil {
+		logger.Errorf("CV_HANDLER", "Error al enviar confirmación de educación: %v", err)
 	}
 
 	return nil
