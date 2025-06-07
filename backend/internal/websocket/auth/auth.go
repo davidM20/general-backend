@@ -61,7 +61,7 @@ func (a *Authenticator) AuthenticateAndGetUserData(r *http.Request) (userID int6
 
 	// Ejemplo: Si el token es "valid-token-for-user-1", se autentica como UserID 1.
 	// En una implementación real, esto consultaría la tabla Session o validaría un JWT.
-	user, err := queries.GetUserBySessionToken(a.db, token) // Asumimos que tienes esta función en tu paquete db/queries
+	user, err := queries.GetUserBySessionToken(token) // Asumimos que tienes esta función en tu paquete db/queries
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logger.Warnf("AUTH", "Token de sesión inválido o expirado: %s", token)
@@ -84,5 +84,6 @@ func (a *Authenticator) AuthenticateAndGetUserData(r *http.Request) (userID int6
 	return user.Id, wsmodels.WsUserData{
 		UserID:   user.Id,
 		Username: user.UserName,
+		RoleId:   user.RoleId,
 	}, nil
 }

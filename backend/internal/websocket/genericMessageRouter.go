@@ -69,6 +69,10 @@ REGLAS Y GUÍA PARA MODIFICAR EL ROUTER DE MENSAJES WEBSOCKET
      * companies: Buscar empresas
      * all: Buscar usuarios y empresas
      * graduates: Buscar egresados
+   - profile:
+     * get: Obtener el perfil del propio usuario.
+     * update: Actualizar datos del perfil del propio usuario.
+     * view: Ver el perfil público de otro usuario.
 
 8. ESTRUCTURA DE PAYLOAD:
    - Para chat/get_history:
@@ -152,6 +156,9 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 		"reject_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
 			return handlers.HandleRejectFriendRequest(conn, msg)
 		},
+		"contact": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleContactRequest(conn, msg)
+		},
 	},
 	// Feed: Manejo de items del feed
 	"feed": {
@@ -190,28 +197,26 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 			return handlers.HandleGetCV(conn, msg)
 		},
 	},
-	// Profile: Manejo del perfil de usuario
+	// Profile: Manejo de perfiles de usuario
 	"profile": {
-		"get_my": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
-			return handlers.HandleGetMyProfile(conn, msg)
+		"get": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
+			return handlers.HandleMyProfileView(conn, msg)
 		},
-		"update_my": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
-			// Pasamos solo los datos relevantes al handler
+		"update": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
 			subHandlerMessage := types.ClientToServerMessage{
 				PID:     msg.PID,
 				Type:    msg.Type,
 				Payload: requestData.Data,
 			}
-			return handlers.HandleUpdateMyProfile(conn, subHandlerMessage)
+			return handlers.HandleUpdateProfile(conn, subHandlerMessage)
 		},
-		"get_user": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
-			// Pasamos solo los datos relevantes al handler
+		"view": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
 			subHandlerMessage := types.ClientToServerMessage{
 				PID:     msg.PID,
 				Type:    msg.Type,
 				Payload: requestData.Data,
 			}
-			return handlers.HandleGetUserProfile(conn, subHandlerMessage)
+			return handlers.HandleViewProfile(conn, subHandlerMessage)
 		},
 	},
 }

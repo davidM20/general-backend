@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+// REGLAS A SEGUIR
+// 1. Si un campo es NULL, se debe manejar con sql.NullString, sql.NullInt64, etc.
+// 2. Si un campo es opcional, se debe manejar con *string, *int64, etc.
+// 3. Si un campo es un array, se debe manejar con []string, []int64, etc.
+// 4. Si un campo es un objeto, se debe manejar con el tipo de objeto definido en el modelo.
+// 5. Si un campo es un booleano, se debe manejar con bool.
+
+// NO CAMBIAR EL NOMBRE DE LAS STRUCTS EXISTENTE PARA HACER COMPATIBLE CON UNA NUEVA FUCIONALIDAD
+// TAMPOCO CAMBIR LOS TIPOS DE DATOS SI SE VA A USAR ESTE ARCHIVO DEBE SER O PARA LEER O AGREGRA ALGO NUEVO MAS NO CAMBIR LO EXIXTENTE
+// LAS FUNCIONES NUEVA SI REQUIREN ALGO SE DEBE DE UTILIZAR LOS MODELS EXISTENTES A MENOS QUE LA TAREA SEA MUY ESPECIFICA PARA UNA FUNCION EN ESPECIFICO O UN CASO ESPECIFICO
+
 // Token defines the structure for the Token table.
 type Token struct {
 	Id        int    `json:"id" db:"Id"`
@@ -139,36 +150,45 @@ type Message struct {
 
 // Education defines the structure for the Education table.
 type Education struct {
-	Id             int64         `json:"ID" db:"Id"`
-	PersonId       int64         `json:"PersonId" db:"PersonId"`
-	Institution    string        `json:"Institution" db:"Institution"`
-	Degree         string        `json:"Degree" db:"Degree"`
-	Campus         string        `json:"Campus" db:"Campus"`
-	GraduationDate sql.NullTime  `json:"GraduationDate" db:"GraduationDate"`     // Handle NULL
-	CountryId      sql.NullInt64 `json:"CountryId" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
-	CountryName    string        `json:"CountryName,omitempty" db:"CountryName"` // Nuevo campo
+	Id                  int64          `json:"ID" db:"Id"`
+	PersonId            int64          `json:"PersonId" db:"PersonId"`
+	Institution         string         `json:"Institution" db:"Institution"`
+	Degree              string         `json:"Degree" db:"Degree"`
+	Campus              sql.NullString `json:"Campus" db:"Campus"`
+	GraduationDate      sql.NullTime   `json:"GraduationDate" db:"GraduationDate"`
+	CountryId           sql.NullInt64  `json:"CountryId" db:"CountryId"`
+	CountryName         sql.NullString `json:"CountryName,omitempty" db:"CountryName"`
+	IsCurrentlyStudying sql.NullBool   `json:"isCurrentlyStudying,omitempty" db:"IsCurrentlyStudying"`
 }
 
 // WorkExperience defines the structure for the WorkExperience table.
 type WorkExperience struct {
-	Id          int64         `json:"ID" db:"Id"`
-	PersonId    int64         `json:"PersonId" db:"PersonId"`
-	Company     string        `json:"Company" db:"Company"`
-	Position    string        `json:"Position" db:"Position"`
-	StartDate   sql.NullTime  `json:"StartDate" db:"StartDate"` // Handle NULL
-	EndDate     sql.NullTime  `json:"EndDate" db:"EndDate"`     // Handle NULL
-	Description string        `json:"Description" db:"Description"`
-	CountryId   sql.NullInt64 `json:"CountryId" db:"CountryId"`               // <--- CAMBIADO a sql.NullInt64
-	CountryName string        `json:"CountryName,omitempty" db:"CountryName"` // Nuevo campo
+	Id           int64          `json:"ID" db:"Id"`
+	PersonId     int64          `json:"PersonId" db:"PersonId"`
+	Company      string         `json:"Company" db:"Company"`
+	Position     string         `json:"Position" db:"Position"`
+	StartDate    sql.NullTime   `json:"StartDate" db:"StartDate"`
+	EndDate      sql.NullTime   `json:"EndDate" db:"EndDate"`
+	Description  sql.NullString `json:"Description" db:"Description"`
+	CountryId    sql.NullInt64  `json:"CountryId" db:"CountryId"`
+	CountryName  sql.NullString `json:"CountryName,omitempty" db:"CountryName"`
+	IsCurrentJob sql.NullBool   `json:"isCurrentJob,omitempty" db:"IsCurrentJob"`
 }
 
 // Certifications defines the structure for the Certifications table.
 type Certifications struct {
-	Id            int64        `json:"ID" db:"Id"`
-	PersonId      int64        `json:"PersonId" db:"PersonId"`
-	Certification string       `json:"Certification" db:"Certification"`
-	Institution   string       `json:"Institution" db:"Institution"`
-	DateObtained  sql.NullTime `json:"dateObtained" db:"DateObtained"` // Handle NULL
+	Id              int64          `json:"ID" db:"Id"`
+	PersonId        int64          `json:"PersonId" db:"PersonId"`
+	Certification   string         `json:"Certification" db:"Certification"`
+	Institution     string         `json:"Institution" db:"Institution"`
+	DateObtained    sql.NullTime   `json:"dateObtained" db:"DateObtained"` // Handle NULL
+	Description     sql.NullString `json:"description" db:"Description"`
+	Company         sql.NullString `json:"company" db:"Company"`
+	Document        sql.NullString `json:"document" db:"Document"`
+	ProjectStatus   sql.NullString `json:"project_status" db:"ProjectStatus"`
+	StartDate       sql.NullTime   `json:"start_date" db:"StartDate"`              // Handle NULL
+	ExpectedEndDate sql.NullTime   `json:"expected_end_date" db:"ExpectedEndDate"` // Handle NULL
+	IsOngoing       sql.NullBool   `json:"isOngoing,omitempty" db:"IsOngoing"`
 }
 
 // Skills defines the structure for the Skills table.
@@ -189,16 +209,17 @@ type Languages struct {
 
 // Project defines the structure for the Project table.
 type Project struct {
-	Id              int64        `json:"ID" db:"Id"`
-	PersonID        int64        `json:"PersonId" db:"PersonID"`
-	Title           string       `json:"Title" db:"Title"`
-	Role            string       `json:"Role" db:"Role"`
-	Description     string       `json:"Description" db:"Description"`
-	Company         string       `json:"Company" db:"Company"`
-	Document        string       `json:"Document" db:"Document"`
-	ProjectStatus   string       `json:"ProjectStatus" db:"ProjectStatus"`
-	StartDate       sql.NullTime `json:"StartDate" db:"StartDate"`             // Handle NULL
-	ExpectedEndDate sql.NullTime `json:"ExpectedEndDate" db:"ExpectedEndDate"` // Handle NULL
+	Id              int64          `json:"id" db:"Id"`
+	PersonID        int64          `json:"person_id" db:"PersonID"`
+	Title           string         `json:"title" db:"Title"`
+	Role            sql.NullString `json:"role" db:"Role"`
+	Description     sql.NullString `json:"description" db:"Description"`
+	Company         sql.NullString `json:"company" db:"Company"`
+	Document        sql.NullString `json:"document" db:"Document"`
+	ProjectStatus   sql.NullString `json:"project_status" db:"ProjectStatus"`
+	StartDate       sql.NullTime   `json:"start_date" db:"StartDate"`
+	ExpectedEndDate sql.NullTime   `json:"expected_end_date" db:"ExpectedEndDate"`
+	IsOngoing       sql.NullBool   `json:"isOngoing,omitempty" db:"IsOngoing"`
 }
 
 // Enterprise defines the structure for the Enterprise table.
@@ -401,4 +422,81 @@ type ChatMessage struct {
 type MessageStatus struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"` // e.g., "sent", "delivered_to_server", "delivered_to_recipient_device", "read_by_recipient"
+}
+
+type UpdateProfilePayload struct {
+	FirstName      *string `json:"firstName,omitempty"`
+	LastName       *string `json:"lastName,omitempty"`
+	UserName       *string `json:"userName,omitempty"`
+	Phone          *string `json:"phone,omitempty"`
+	Sex            *string `json:"sex,omitempty"`
+	Birthdate      *string `json:"birthdate,omitempty"` // Formato esperado: YYYY-MM-DD
+	NationalityID  *int64  `json:"nationalityId,omitempty"`
+	Summary        *string `json:"summary,omitempty"`
+	Address        *string `json:"address,omitempty"`
+	Github         *string `json:"github,omitempty"`
+	Linkedin       *string `json:"linkedin,omitempty"`
+	CompanyName    *string `json:"companyName,omitempty"`
+	Picture        *string `json:"picture,omitempty"`
+	Email          *string `json:"email,omitempty"`
+	ContactEmail   *string `json:"contactEmail,omitempty"`
+	Twitter        *string `json:"twitter,omitempty"`
+	Facebook       *string `json:"facebook,omitempty"`
+	DocId          *string `json:"docId,omitempty"`
+	DegreeId       *int64  `json:"degreeId,omitempty"`
+	UniversityId   *int64  `json:"universityId,omitempty"`
+	Sector         *string `json:"sector,omitempty"`
+	Location       *string `json:"location,omitempty"`
+	FoundationYear *int    `json:"foundationYear,omitempty"`
+	EmployeeCount  *int    `json:"employeeCount,omitempty"`
+}
+
+// --- Profile View Structs ---
+
+// UserProfile es la estructura para el perfil de usuario que se envía al frontend.
+// Se diferencia del modelo User porque omite campos sensibles y maneja los tipos de datos
+// para que coincidan con lo que espera el cliente (ej. `time.Time` en lugar de `sql.NullTime`).
+type UserProfile struct {
+	Id                 int64      `json:"id" db:"Id"`
+	FirstName          string     `json:"firstName,omitempty" db:"FirstName"`
+	LastName           string     `json:"lastName,omitempty" db:"LastName"`
+	UserName           string     `json:"userName,omitempty" db:"UserName"`
+	Email              string     `json:"email" db:"Email"`
+	ContactEmail       string     `json:"contactEmail,omitempty" db:"ContactEmail"`
+	Twitter            string     `json:"twitter,omitempty" db:"Twitter"`
+	Facebook           string     `json:"facebook,omitempty" db:"Facebook"`
+	Phone              string     `json:"phone,omitempty" db:"Phone"`
+	Sex                string     `json:"sex,omitempty" db:"Sex"`
+	DocId              string     `json:"docId,omitempty" db:"DocId"`
+	NationalityId      *int32     `json:"nationalityId,omitempty" db:"NationalityId"`
+	Birthdate          *time.Time `json:"birthdate,omitempty" db:"Birthdate"`
+	Picture            string     `json:"picture,omitempty" db:"Picture"`
+	DegreeId           *int64     `json:"degreeId,omitempty" db:"DegreeId"`
+	UniversityId       *int64     `json:"universityId,omitempty" db:"UniversityId"`
+	RoleId             int        `json:"roleId" db:"RoleId"`
+	StatusAuthorizedId int        `json:"statusAuthorizedId,omitempty" db:"StatusAuthorizedId"`
+	Summary            string     `json:"summary,omitempty" db:"Summary"`
+	Address            string     `json:"address,omitempty" db:"Address"`
+	Github             string     `json:"github,omitempty" db:"Github"`
+	Linkedin           string     `json:"linkedin,omitempty" db:"Linkedin"`
+	RIF                string     `json:"rif,omitempty" db:"RIF"`
+	Sector             string     `json:"sector,omitempty" db:"Sector"`
+	CompanyName        string     `json:"companyName,omitempty" db:"CompanyName"`
+	Location           string     `json:"location,omitempty" db:"Location"`
+	FoundationYear     *int       `json:"foundationYear,omitempty" db:"FoundationYear"`
+	EmployeeCount      *int       `json:"employeeCount,omitempty" db:"EmployeeCount"`
+	CreatedAt          time.Time  `json:"createdAt" db:"CreatedAt"`
+	UpdatedAt          time.Time  `json:"updatedAt" db:"UpdatedAt"`
+}
+
+// CompleteProfile agrupa toda la información del perfil de un usuario.
+type CompleteProfile struct {
+	User           UserProfile      `json:"user"`
+	Education      []Education      `json:"education"`
+	WorkExperience []WorkExperience `json:"workExperience"`
+	Certifications []Certifications `json:"certifications"`
+	Skills         []Skills         `json:"skills"`
+	Languages      []Languages      `json:"languages"`
+	Projects       []Project        `json:"projects"`
+	Degree         *Degree          `json:"degree,omitempty"`
 }

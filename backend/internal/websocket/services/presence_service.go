@@ -69,14 +69,14 @@ func HandleUserConnect(userID int64, username string, manager *customws.Connecti
 	logger.Infof("SERVICE_PRESENCE", "User connected: ID %d, Username: %s. Processing presence update.", userID, username)
 
 	// Actualizar estado a online
-	err := queries.SetUserOnlineStatus(presenceDB, userID, true)
+	err := queries.SetUserOnlineStatus(userID, true)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado online para UserID %d: %v", userID, err)
 		return fmt.Errorf("error actualizando estado online: %w", err)
 	}
 
 	// Notificar a contactos
-	contactUserIDs, err := queries.GetUserContactIDs(presenceDB, userID)
+	contactUserIDs, err := queries.GetUserContactIDs(userID)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error obteniendo IDs de contacto para UserID %d: %v", userID, err)
 	} else if len(contactUserIDs) > 0 {
@@ -123,7 +123,7 @@ func HandleUserDisconnect(userID int64, username string, manager *customws.Conne
 	logger.Infof("SERVICE_PRESENCE", "User disconnected: ID %d, Username: %s. Error (if any): %v. Processing presence update.", userID, username, discErr)
 
 	// Actualizar estado a offline
-	err := queries.SetUserOnlineStatus(presenceDB, userID, false)
+	err := queries.SetUserOnlineStatus(userID, false)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error actualizando estado offline para UserID %d: %v", userID, err)
 	}
@@ -131,7 +131,7 @@ func HandleUserDisconnect(userID int64, username string, manager *customws.Conne
 	lastSeenTimestamp := time.Now().UnixMilli()
 
 	// Notificar a contactos
-	contactUserIDs, err := queries.GetUserContactIDs(presenceDB, userID)
+	contactUserIDs, err := queries.GetUserContactIDs(userID)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error obteniendo IDs de contacto para UserID %d al desconectar: %v", userID, err)
 	} else if len(contactUserIDs) > 0 {
@@ -175,7 +175,7 @@ func GetConnection(userID int64) (*customws.Connection[wsmodels.WsUserData], boo
 	}
 
 	// Verificar si el usuario está online
-	isOnline, err := queries.GetUserOnlineStatus(presenceDB, userID)
+	isOnline, err := queries.GetUserOnlineStatus(userID)
 	if err != nil {
 		logger.Errorf("SERVICE_PRESENCE", "Error verificando estado online para UserID %d: %v", userID, err)
 		return nil, false

@@ -12,6 +12,7 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
 	"github.com/davidM20/micro-service-backend-go.git/internal/db"
+	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	internalWs "github.com/davidM20/micro-service-backend-go.git/internal/websocket"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/admin"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/auth"
@@ -58,6 +59,7 @@ func main() {
 	services.InitializeChatService(dbConn)
 	services.InitializeNotificationService(dbConn)
 	services.InitializeProfileService(dbConn)
+	queries.InitDB(dbConn)
 
 	// Inicializar FeedService y FeedHandler
 	feedSvc := services.NewFeedService(dbConn) // Crear y asignar la instancia

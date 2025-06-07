@@ -97,7 +97,7 @@ DegreeId BIGINT,
 UniversityId BIGINT,
 RoleId INT,  -- el rol determina si es un estudiante o una empresa (1: estudiante, 2: egresado 3: empresa)
 StatusAuthorizedId INT,
-Summary VARCHAR(255),
+Summary TEXT,
 Address VARCHAR(255),
 Github VARCHAR(255),
 Linkedin VARCHAR(255),
@@ -133,6 +133,14 @@ CREATE INDEX idx_company_sector ON User(Sector, RoleId);
 
 -- Índice para búsquedas por ubicación
 CREATE INDEX idx_user_location ON User(Location);
+
+-- Índice para búsquedas por RIF
+CREATE INDEX idx_user_rif ON User(RIF);
+
+-- Índice para búsquedas por CompanyName
+CREATE INDEX idx_user_company_name ON User(CompanyName);
+
+
 
 -- Modificaciones adicionales a la tabla User
 -- Agregar campos de empresa
@@ -246,6 +254,7 @@ Degree VARCHAR(255),
 Campus VARCHAR(255),
 GraduationDate DATE,
 CountryId BIGINT,
+IsCurrentlyStudying BOOLEAN DEFAULT FALSE,
 FOREIGN KEY (PersonId) REFERENCES User(Id)
 );
 
@@ -256,8 +265,9 @@ Company VARCHAR(255),
 Position VARCHAR(255),
 StartDate DATE,
 EndDate DATE,
-Description VARCHAR(255),
+Description TEXT,
 CountryId BIGINT,
+IsCurrentJob BOOLEAN DEFAULT FALSE,
 FOREIGN KEY (PersonId) REFERENCES User(Id)
 );
 
@@ -291,12 +301,13 @@ Id BIGINT AUTO_INCREMENT PRIMARY KEY,
 PersonID BIGINT,
 Title VARCHAR(255),
 Role VARCHAR(255),
-Description VARCHAR(255),
+Description TEXT,
 Company VARCHAR(255),
 Document VARCHAR(255),
 ProjectStatus VARCHAR(255),
 StartDate DATE,
 ExpectedEndDate DATE,
+IsOngoing BOOLEAN DEFAULT FALSE,
 FOREIGN KEY (PersonID) REFERENCES User(Id)
 );
 
@@ -374,3 +385,11 @@ CREATE INDEX idx_community_event_created_by ON CommunityEvent(CreatedByUserId);
 ALTER TABLE CommunityEvent ADD COLUMN Capacity INT NULL;
 ALTER TABLE CommunityEvent ADD COLUMN Price DECIMAL(10, 2) NULL;
 ALTER TABLE CommunityEvent ADD COLUMN Tags JSON NULL;
+
+-- ALTER commands for existing databases to apply new schema changes
+ALTER TABLE User MODIFY Summary TEXT;
+ALTER TABLE WorkExperience MODIFY Description TEXT;
+ALTER TABLE Project MODIFY Description TEXT;
+ALTER TABLE Education ADD COLUMN IsCurrentlyStudying BOOLEAN DEFAULT FALSE;
+ALTER TABLE WorkExperience ADD COLUMN IsCurrentJob BOOLEAN DEFAULT FALSE;
+ALTER TABLE Project ADD COLUMN IsOngoing BOOLEAN DEFAULT FALSE;

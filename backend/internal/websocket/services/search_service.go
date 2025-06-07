@@ -25,7 +25,7 @@ func NewSearchService(db *sql.DB) SearchService {
 
 func (s *searchService) SearchAll(searchTerm string, limit, offset int) ([]wsmodels.SearchResultItem, error) {
 	// 1. Llamar a la consulta de la base de datos
-	users, err := queries.SearchAll(s.db, searchTerm, limit, offset)
+	users, err := queries.SearchAll(searchTerm, limit, offset)
 	if err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error al buscar 'all': %v", err)
 		return nil, fmt.Errorf("error al realizar la búsqueda: %w", err)

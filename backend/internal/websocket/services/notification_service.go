@@ -72,7 +72,7 @@ func CreateFriendRequestNotification(fromUserID, toUserID int64, requestMessage 
 	event := models.Event{
 		EventType:      models.EventTypeFriendRequest,
 		EventTitle:     "Nueva solicitud de amistad",
-		Description:    fmt.Sprintf("Has recibido una solicitud de amistad"),
+		Description:    "Has recibido una solicitud de amistad",
 		UserId:         toUserID,
 		OtherUserId:    sql.NullInt64{Int64: fromUserID, Valid: true},
 		Status:         models.EventStatusPending,
@@ -145,7 +145,7 @@ func createAndSendNotification(event models.Event) error {
 		event.CreateAt = time.Now()
 	}
 
-	if err := queries.CreateEvent(notificationDB, &event); err != nil {
+	if err := queries.CreateEvent(&event); err != nil {
 		logger.Errorf("SERVICE_NOTIFICATION", "Error creando evento: %v", err)
 		return fmt.Errorf("error creando evento: %w", err)
 	}
@@ -220,7 +220,7 @@ func mapEventToNotificationInfo(event models.Event) (wsmodels.NotificationInfo, 
 
 	// Obtener información del perfil si hay OtherUserId
 	if event.OtherUserId.Valid {
-		otherUserInfo, err := queries.GetUserBaseInfo(notificationDB, event.OtherUserId.Int64)
+		otherUserInfo, err := queries.GetUserBaseInfo(event.OtherUserId.Int64)
 		if err == nil && otherUserInfo != nil {
 			notificationInfo.Profile = wsmodels.ProfileData{
 				ID:        otherUserInfo.ID,
@@ -263,7 +263,7 @@ func ProcessAndSendNotification(userIDToNotify int64, eventType string, title st
 		}
 	}
 
-	if err := queries.CreateEvent(notificationDB, &event); err != nil {
+	if err := queries.CreateEvent(&event); err != nil {
 		logger.Errorf("SERVICE_NOTIFICATION", "Error creando evento para UserID %d: %v", userIDToNotify, err)
 		return fmt.Errorf("error creando evento: %w", err)
 	}
@@ -296,7 +296,7 @@ func ProcessAndSendNotification(userIDToNotify int64, eventType string, title st
 	}
 
 	if event.OtherUserId.Valid {
-		otherUserInfo, err := queries.GetUserBaseInfo(notificationDB, event.OtherUserId.Int64)
+		otherUserInfo, err := queries.GetUserBaseInfo(event.OtherUserId.Int64)
 		if err != nil {
 			logger.Warnf("SERVICE_NOTIFICATION", "Error obteniendo UserBaseInfo para OtherUserId %d para notificación en tiempo real: %v", event.OtherUserId.Int64, err)
 		} else if otherUserInfo != nil {
@@ -344,7 +344,7 @@ func GetNotifications(userID int64, onlyUnread bool, limit int, offset int) ([]w
 	logger.Infof("SERVICE_NOTIFICATION", "Obteniendo notificaciones para UserID %d (onlyUnread: %t, limit: %d, offset: %d)", userID, onlyUnread, limit, offset)
 
 	// Llamar a la query que recupera los eventos
-	events, err := queries.GetEventsByUserID(notificationDB, userID, onlyUnread, limit, offset)
+	events, err := queries.GetEventsByUserID(userID, onlyUnread, limit, offset)
 	if err != nil {
 		logger.Errorf("SERVICE_NOTIFICATION", "Error obteniendo eventos para UserID %d desde la BD: %v", userID, err)
 		return nil, fmt.Errorf("error obteniendo eventos: %w", err)
@@ -380,7 +380,7 @@ func MarkRead(userID int64, notificationIDStr string) error {
 	logger.Infof("SERVICE_NOTIFICATION", "Marcando notificación ID %d como leída para UserID %d", eventID, userID)
 
 	// Llamar a la query para actualizar el estado IsRead del evento
-	err = queries.MarkEventAsRead(notificationDB, eventID)
+	err = queries.MarkEventAsRead(eventID)
 	if err != nil {
 		logger.Errorf("SERVICE_NOTIFICATION", "Error marcando evento ID %d como leído para UserID %d en BD: %v", eventID, userID, err)
 		return fmt.Errorf("error marcando como leído: %w", err)
@@ -398,7 +398,7 @@ func MarkAllRead(userID int64) (int64, error) {
 	logger.Infof("SERVICE_NOTIFICATION", "Marcando todas las notificaciones como leídas para UserID %d", userID)
 
 	// Llamar a la query para actualizar el estado IsRead de todos los eventos del usuario
-	rowsAffected, err := queries.MarkAllEventsAsReadForUser(notificationDB, userID)
+	rowsAffected, err := queries.MarkAllEventsAsReadForUser(userID)
 	if err != nil {
 		logger.Errorf("SERVICE_NOTIFICATION", "Error marcando todos los eventos como leídos para UserID %d en BD: %v", userID, err)
 		return 0, fmt.Errorf("error marcando todos como leídos: %w", err)

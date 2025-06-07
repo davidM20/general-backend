@@ -1,10 +1,12 @@
 package services
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
+	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
@@ -124,5 +126,62 @@ func RejectFriendRequest(userID int64, notificationId string, timestamp string, 
 	}
 
 	logger.Successf("SERVICE_CONTACT", "Solicitud de amistad rechazada exitosamente para user %d", userID)
+	return nil
+}
+
+// CreateContactRequest crea una nueva solicitud de contacto.
+// Inserta un nuevo contacto con estado 'pending' y crea un chat asociado.
+func CreateContactRequest(senderID, recipientID int64, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
+	logger.Infof("SERVICE_CONTACT", "User %d iniciando contacto con user %d", senderID, recipientID)
+
+	// Crear chat entre los usuarios
+	chatID, err := queries.CreateChat(senderID, recipientID)
+	if err != nil {
+		return fmt.Errorf("error creando chat: %w", err)
+	}
+
+	// Crear el contacto con estado 'pending'
+	err = queries.CreateContact(senderID, recipientID, chatID)
+	if err != nil {
+		return fmt.Errorf("error creando contacto: %w", err)
+	}
+
+	// Crear y guardar el evento
+	event := &models.Event{
+		EventType:      models.EventTypeFriendRequest,
+		EventTitle:     "Nueva solicitud de contacto",
+		Description:    "Has recibido una nueva solicitud de contacto.",
+		UserId:         recipientID,
+		OtherUserId:    sql.NullInt64{Int64: senderID, Valid: true},
+		CreateAt:       time.Now(),
+		IsRead:         false,
+		Status:         models.EventStatusPending,
+		ActionRequired: true,
+	}
+
+	if err := queries.CreateEvent(event); err != nil {
+		// Aunque falle la creación del evento, no consideramos que sea un error fatal
+		// para el flujo principal de creación de contacto. Solo lo logueamos.
+		logger.Errorf("SERVICE_CONTACT", "Error creando evento de notificación para user %d: %v", recipientID, err)
+	}
+
+	// Notificar al usuario receptor
+	notificationMsg := types.ServerToClientMessage{
+		Type:       types.MessageTypeNewNotification,
+		FromUserID: senderID,
+		Payload: map[string]interface{}{
+			"type":      "friend_request_received",
+			"title":     "Nueva solicitud de amistad",
+			"message":   "Has recibido una nueva solicitud de amistad",
+			"senderId":  senderID,
+			"timestamp": time.Now().Format(time.RFC3339),
+		},
+	}
+
+	if err := manager.SendMessageToUser(recipientID, notificationMsg); err != nil {
+		logger.Warnf("SERVICE_CONTACT", "Error enviando notificación de solicitud de amistad a user %d: %v", recipientID, err)
+	}
+
+	logger.Successf("SERVICE_CONTACT", "Solicitud de contacto de user %d a user %d enviada exitosamente", senderID, recipientID)
 	return nil
 }

@@ -60,7 +60,7 @@ func ProcessClientMessage(conn *customws.Connection[wsmodels.WsUserData], msg ty
 
 	// --- Perfil ---
 	case types.MessageTypeGetMyProfile:
-		err = handlers.HandleGetMyProfile(conn, msg)
+		err = handlers.HandleGetProfile(conn, msg)
 	case types.MessageTypeGetUserProfile:
 		err = handlers.HandleGetUserProfile(conn, msg)
 

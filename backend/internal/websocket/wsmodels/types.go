@@ -7,6 +7,7 @@ import "time"
 type WsUserData struct {
 	UserID   int64
 	Username string
+	RoleId   int
 	// Podríamos añadir más datos aquí si son frecuentemente necesarios
 	// y queremos evitar consultas repetidas a la BD en cada mensaje.
 	// Por ejemplo: Roles, Email.
@@ -89,33 +90,40 @@ type CurriculumVitae struct {
 
 // EducationItem representa una entrada en la sección de educación del currículum.
 type EducationItem struct {
-	ID             int64  `json:"id"`
-	Institution    string `json:"institution"`
-	Degree         string `json:"degree"`
-	Campus         string `json:"campus,omitempty"`
-	GraduationDate string `json:"graduationDate,omitempty"` // Formato YYYY-MM-DD
-	CountryID      int64  `json:"countryId,omitempty"`      // Referencia a la tabla Nationality
-	CountryName    string `json:"countryName,omitempty"`    // Nombre del país
+	ID                  int64  `json:"id"`
+	Institution         string `json:"institution"`
+	Degree              string `json:"degree"`
+	Campus              string `json:"campus,omitempty"`
+	GraduationDate      string `json:"graduationDate,omitempty"` // Formato YYYY-MM-DD
+	CountryID           int64  `json:"countryId,omitempty"`      // Referencia a la tabla Nationality
+	CountryName         string `json:"countryName,omitempty"`    // Nombre del país
+	IsCurrentlyStudying bool   `json:"isCurrentlyStudying,omitempty"`
 }
 
 // WorkExperienceItem representa una entrada en la sección de experiencia laboral.
 type WorkExperienceItem struct {
-	ID          int64  `json:"id"`
-	Company     string `json:"company"`
-	Position    string `json:"position"`
-	StartDate   string `json:"startDate,omitempty"` // Formato YYYY-MM-DD
-	EndDate     string `json:"endDate,omitempty"`   // Formato YYYY-MM-DD, puede ser nulo (actual)
-	Description string `json:"description,omitempty"`
-	CountryID   int64  `json:"countryId,omitempty"`   // Referencia a la tabla Nationality
-	CountryName string `json:"countryName,omitempty"` // Nombre del país
+	ID           int64  `json:"id"`
+	PersonId     int64  `json:"personId,omitempty"`
+	Company      string `json:"company"`
+	Position     string `json:"position"`
+	StartDate    string `json:"startDate,omitempty"` // Formato YYYY-MM-DD
+	EndDate      string `json:"endDate,omitempty"`   // Formato YYYY-MM-DD, puede ser nulo (actual)
+	Description  string `json:"description,omitempty"`
+	CountryID    int64  `json:"countryId,omitempty"`   // Referencia a la tabla Nationality
+	CountryName  string `json:"countryName,omitempty"` // Nombre del país
+	IsCurrentJob bool   `json:"isCurrentJob,omitempty"`
 }
 
 // CertificationItem representa una certificación obtenida por el usuario.
 type CertificationItem struct {
-	ID            int64  `json:"id"`
-	Certification string `json:"certification"`
-	Institution   string `json:"institution"`
-	DateObtained  string `json:"dateObtained,omitempty"` // Formato YYYY-MM-DD
+	ID              int64  `json:"id"`
+	Certification   string `json:"certification"`
+	Institution     string `json:"institution"`
+	DateObtained    string `json:"dateObtained,omitempty"`    // Formato YYYY-MM-DD
+	ProjectStatus   string `json:"projectStatus,omitempty"`   // Ej: "En curso", "Completado"
+	StartDate       string `json:"startDate,omitempty"`       // Formato YYYY-MM-DD
+	ExpectedEndDate string `json:"expectedEndDate,omitempty"` // Formato YYYY-MM-DD
+	IsOngoing       bool   `json:"isOngoing,omitempty"`
 }
 
 // SkillItem representa una habilidad del usuario.
@@ -143,6 +151,7 @@ type ProjectItem struct {
 	ProjectStatus   string `json:"projectStatus,omitempty"`   // Ej: "En curso", "Completado"
 	StartDate       string `json:"startDate,omitempty"`       // Formato YYYY-MM-DD
 	ExpectedEndDate string `json:"expectedEndDate,omitempty"` // Formato YYYY-MM-DD
+	IsOngoing       bool   `json:"isOngoing,omitempty"`
 }
 
 // UserContactInfo se utiliza para mostrar información de usuarios en listas de contactos o resultados de búsqueda.

@@ -33,7 +33,7 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 	}
 	logger.Infof("SERVICE_CHAT", "Recuperando lista de chats para UserID: %d", userID)
 
-	contacts, err := queries.GetAcceptedContacts(chatDB, userID)
+	contacts, err := queries.GetAcceptedContacts(userID)
 	if err != nil {
 		logger.Errorf("SERVICE_CHAT", "Error obteniendo contactos para UserID %d: %v", userID, err)
 		return nil, fmt.Errorf("error obteniendo contactos: %w", err)
@@ -48,14 +48,14 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 			otherUserID = contact.User1Id
 		}
 
-		otherUserInfo, err := queries.GetUserBaseInfo(chatDB, otherUserID)
+		otherUserInfo, err := queries.GetUserBaseInfo(otherUserID)
 		if err != nil {
 			logger.Warnf("SERVICE_CHAT", "Error obteniendo info del usuario %d para la lista de chat de %d: %v", otherUserID, userID, err)
 			// Podríamos optar por continuar y mostrar el chat sin nombre/foto o saltarlo
 			continue // Por ahora, saltamos este chat si no podemos obtener info del otro usuario
 		}
 
-		lastMsg, err := queries.GetLastMessageBetweenUsers(chatDB, userID, otherUserID)
+		lastMsg, err := queries.GetLastMessageBetweenUsers(userID, otherUserID)
 		if err != nil {
 			logger.Warnf("SERVICE_CHAT", "Error obteniendo último mensaje entre %d y %d: %v", userID, otherUserID, err)
 		}
@@ -69,7 +69,7 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 			lastMessageFromUserId = lastMsg.UserId
 		}
 
-		unreadCount, err := queries.GetUnreadMessageCount(chatDB, userID, otherUserID) // Mensajes de otherUserID para userID
+		unreadCount, err := queries.GetUnreadMessageCount(userID, otherUserID) // Mensajes de otherUserID para userID
 		if err != nil {
 			logger.Warnf("SERVICE_CHAT", "Error obteniendo contador de no leídos para %d de %d: %v", userID, otherUserID, err)
 			// No es un error fatal
@@ -147,7 +147,7 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 	}
 
 	// Guardar el mensaje en la base de datos
-	createdMsgID, err := queries.CreateMessage(chatDB, newMessage)
+	createdMsgID, err := queries.CreateMessage(newMessage)
 	if err != nil {
 		logger.Errorf("SERVICE_CHAT", "Error guardando mensaje para UserID %d, ChatID %s: %v", userID, chatId, err)
 		return nil, fmt.Errorf("error guardando mensaje en DB: %w", err)
@@ -160,7 +160,7 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 	// --- Lógica para encontrar destinatario y enviar si está en línea ---
 
 	// 1. Obtener información del chat/contacto para identificar al destinatario
-	contact, err := queries.GetContactByChatID(chatDB, chatId)
+	contact, err := queries.GetContactByChatID(chatId)
 	if err != nil {
 		logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s después de guardar mensaje: %v", chatId, err)
 		return newMessage, fmt.Errorf("mensaje guardado pero error obteniendo datos del chat para envío: %w", err)
@@ -181,14 +181,14 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 	isRecipientOnline := manager.IsUserOnline(recipientUserID)
 
 	// Verificar también el estado en la base de datos
-	dbOnlineStatus, err := queries.GetUserOnlineStatus(chatDB, recipientUserID)
+	dbOnlineStatus, err := queries.GetUserOnlineStatus(recipientUserID)
 	if err != nil {
 		logger.Warnf("SERVICE_CHAT", "Error obteniendo estado online de BD para UserID %d: %v", recipientUserID, err)
 	} else if dbOnlineStatus != isRecipientOnline {
 		// Si hay discrepancia, actualizar el estado en la BD para que coincida con el estado WebSocket
 		logger.Warnf("SERVICE_CHAT", "Desincronización detectada para UserID %d: WS=%v, DB=%v. Actualizando BD.",
 			recipientUserID, isRecipientOnline, dbOnlineStatus)
-		err = queries.SetUserOnlineStatus(chatDB, recipientUserID, isRecipientOnline)
+		err = queries.SetUserOnlineStatus(recipientUserID, isRecipientOnline)
 		if err != nil {
 			logger.Errorf("SERVICE_CHAT", "Error actualizando estado online en BD para UserID %d: %v", recipientUserID, err)
 		}
@@ -252,7 +252,7 @@ func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID stri
 	logger.Infof("SERVICE_CHAT", "Recuperando historial para ChatID: %s, UserID: %d, Limit: %d, BeforeMessageID: %s", chatID, userID, limit, beforeMessageID)
 
 	// Obtener participantes del chat para determinar TargetUserId en cada mensaje
-	contact, err := queries.GetContactByChatID(chatDB, chatID) // Asumiendo que esta función existe o la creas
+	contact, err := queries.GetContactByChatID(chatID) // Asumiendo que esta función existe o la creas
 	if err != nil {
 		logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s: %v", chatID, err)
 		return nil, fmt.Errorf("error obteniendo datos del chat: %w", err)
@@ -371,7 +371,7 @@ func GetChatParticipants(chatID string) (int64, int64, error) {
 	if chatDB == nil {
 		return 0, 0, errors.New("GetChatParticipants: servicio de chat no inicializado con conexión a BD")
 	}
-	contact, err := queries.GetContactByChatID(chatDB, chatID)
+	contact, err := queries.GetContactByChatID(chatID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logger.Warnf("SERVICE_CHAT", "GetChatParticipants: No se encontró contacto para ChatID %s", chatID)

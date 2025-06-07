@@ -111,3 +111,51 @@ func HandleRejectFriendRequest(conn *customws.Connection[wsmodels.WsUserData], m
 	logger.Successf("HANDLER_CONTACT", "Solicitud de amistad rechazada para user %d. PID respuesta: %s", conn.ID, ackMsg.PID)
 	return nil
 }
+
+func HandleContactRequest(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
+	logger.Infof("HANDLER_CONTACT", "User %d iniciando contacto. PID: %s", conn.ID, msg.PID)
+
+	type ContactRequestPayload struct {
+		RecipientID int64 `json:"recipientId"`
+	}
+
+	var payload ContactRequestPayload
+	payloadBytes, err := json.Marshal(msg.Payload)
+	if err != nil {
+		conn.SendErrorNotification(msg.PID, 400, "Error procesando payload de contact_request: "+err.Error())
+		return fmt.Errorf("error marshalling contact_request payload: %w", err)
+	}
+
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		conn.SendErrorNotification(msg.PID, 400, "Error decodificando payload de contact_request: "+err.Error())
+		return fmt.Errorf("error unmarshalling contact_request payload: %w", err)
+	}
+
+	if payload.RecipientID == 0 {
+		conn.SendErrorNotification(msg.PID, 400, "RecipientID es requerido para iniciar contacto.")
+		return errors.New("recipientID no especificado en contact_request")
+	}
+
+	err = services.CreateContactRequest(conn.ID, payload.RecipientID, conn.Manager())
+	if err != nil {
+		logger.Errorf("HANDLER_CONTACT", "Error iniciando contacto para user %d: %v", conn.ID, err)
+		conn.SendErrorNotification(msg.PID, 500, "Error al iniciar contacto: "+err.Error())
+		return err
+	}
+	ackPayload := types.AckPayload{
+		AcknowledgedPID: msg.PID,
+		Status:          "contact_request_sent",
+	}
+	ackMsg := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       types.MessageTypeServerAck,
+		FromUserID: conn.ID,
+		Payload:    ackPayload,
+	}
+	if err := conn.SendMessage(ackMsg); err != nil {
+		logger.Warnf("HANDLER_CONTACT", "Error enviando ServerAck para ContactRequest a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
+	}
+
+	logger.Successf("HANDLER_CONTACT", "Solicitud de contacto enviada para user %d. PID respuesta: %s", conn.ID, ackMsg.PID)
+	return nil
+}

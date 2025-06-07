@@ -8,6 +8,54 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 )
 
+/*
+Package queries proporciona un lugar centralizado para toda la lógica de acceso a la base de datos.
+Este archivo contiene funciones para interactuar con las tablas de la base de datos.
+
+NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
+
+1. CONEXIÓN A LA BASE DE DATOS:
+  - La variable global `DB *sql.DB` se inicializa en el arranque.
+  - NO pasar el puntero de conexión a la base de datos como argumento a las funciones.
+  - Todas las funciones de consulta dentro de este paquete deben usar la variable global `DB` directamente.
+
+2. REUTILIZACIÓN Y RESPONSABILIDAD DEL CÓDIGO:
+  - Antes de añadir una nueva función, comprueba si una existente puede ser reutilizada o generalizada.
+  - Cada función debe tener una única responsabilidad, claramente definida (p. ej., obtener datos de usuario, insertar un mensaje).
+  - Mantén las funciones concisas y enfocadas.
+
+3. DOCUMENTACIÓN:
+  - Documenta cada nueva función y tipo.
+  - Los comentarios deben explicar el propósito de la función, sus parámetros y lo que devuelve.
+  - Explica cualquier lógica compleja o comportamiento no obvio.
+
+4. MANEJO DE ERRORES:
+  - Comprueba siempre los errores devueltos por `DB.Query`, `DB.QueryRow`, `DB.Exec` y `rows.Scan`.
+  - Utiliza `fmt.Errorf("contexto: %w", err)` para envolver los errores, proporcionando contexto sin perder el error original.
+  - Maneja `sql.ErrNoRows` específicamente cuando se espera que una consulta a veces no devuelva resultados (p. ej., `GetUserBy...`).
+
+5. CONVENCIONES DE NOMENCLATURA:
+  - Sigue las convenciones de nomenclatura idiomáticas de Go (p. ej., `CamelCase` para identificadores exportados).
+  - Usa nombres descriptivos para las funciones (p. ej., `GetUserBySessionToken`, `CreateMessage`).
+
+6. CONSTANTES:
+  - Para campos de estado o IDs de tipo (p. ej., estado del mensaje), define constantes en la parte superior del archivo.
+  - Usa estas constantes en lugar de números mágicos para mejorar la legibilidad y el mantenimiento.
+
+7. MANEJO DE COLUMNAS ANULABLES:
+  - Usa `sql.NullString`, `sql.NullInt64`, `sql.NullTime`, etc., para columnas de la base de datos que pueden ser NULL.
+  - Comprueba siempre el campo `Valid` antes de acceder al valor de un tipo anulable.
+
+8. SEGURIDAD:
+  - Para prevenir la inyección de SQL, SIEMPRE usa consultas parametrizadas con `?` como marcadores de posición.
+  - NUNCA construyas consultas concatenando cadenas con entradas proporcionadas por el usuario.
+
+9. AÑADIR NUEVAS CONSULTAS:
+  - Agrupa las funciones relacionadas (p. ej., todas las consultas relacionadas con el usuario, todas las relacionadas con los mensajes).
+  - Considera las implicaciones de rendimiento. Usa `JOIN`s con criterio y añade cláusulas `LIMIT` donde sea aplicable.
+  - Asegúrate de que tu consulta devuelva solo las columnas necesarias.
+*/
+
 // SetSkill agrega o actualiza una habilidad en el CV del usuario
 func SetSkill(db *sql.DB, skill *models.Skills) error {
 	query := `
@@ -45,18 +93,20 @@ func SetLanguage(db *sql.DB, language *models.Languages) error {
 // SetWorkExperience agrega o actualiza una experiencia laboral en el CV del usuario
 func SetWorkExperience(db *sql.DB, experience *models.WorkExperience) error {
 	query := `
-		INSERT INTO WorkExperience (PersonId, Company, Position, StartDate, EndDate, Description, CountryId)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO WorkExperience (Id, PersonId, Company, Position, StartDate, EndDate, Description, CountryId, IsCurrentJob)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 		Company = VALUES(Company),
 		Position = VALUES(Position),
 		StartDate = VALUES(StartDate),
 		EndDate = VALUES(EndDate),
 		Description = VALUES(Description),
-		CountryId = VALUES(CountryId)
+		CountryId = VALUES(CountryId),
+		IsCurrentJob = VALUES(IsCurrentJob)
 	`
 
 	_, err := db.Exec(query,
+		experience.Id,
 		experience.PersonId,
 		experience.Company,
 		experience.Position,
@@ -64,6 +114,7 @@ func SetWorkExperience(db *sql.DB, experience *models.WorkExperience) error {
 		experience.EndDate,
 		experience.Description,
 		experience.CountryId,
+		experience.IsCurrentJob,
 	)
 	if err != nil {
 		return fmt.Errorf("error al establecer experiencia laboral: %w", err)
@@ -97,8 +148,8 @@ func SetCertification(db *sql.DB, certification *models.Certifications) error {
 // SetProject agrega o actualiza un proyecto en el CV del usuario
 func SetProject(db *sql.DB, project *models.Project) error {
 	query := `
-		INSERT INTO Project (PersonID, Title, Role, Description, Company, Document, ProjectStatus, StartDate, ExpectedEndDate)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO Project (Id, PersonID, Title, Role, Description, Company, Document, ProjectStatus, StartDate, ExpectedEndDate, IsOngoing)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 		Title = VALUES(Title),
 		Role = VALUES(Role),
@@ -107,10 +158,12 @@ func SetProject(db *sql.DB, project *models.Project) error {
 		Document = VALUES(Document),
 		ProjectStatus = VALUES(ProjectStatus),
 		StartDate = VALUES(StartDate),
-		ExpectedEndDate = VALUES(ExpectedEndDate)
+		ExpectedEndDate = VALUES(ExpectedEndDate),
+		IsOngoing = VALUES(IsOngoing)
 	`
 
 	_, err := db.Exec(query,
+		project.Id,
 		project.PersonID,
 		project.Title,
 		project.Role,
@@ -120,6 +173,7 @@ func SetProject(db *sql.DB, project *models.Project) error {
 		project.ProjectStatus,
 		project.StartDate,
 		project.ExpectedEndDate,
+		project.IsOngoing,
 	)
 	if err != nil {
 		return fmt.Errorf("error al establecer proyecto: %w", err)
@@ -130,15 +184,24 @@ func SetProject(db *sql.DB, project *models.Project) error {
 // SetEducation inserta o actualiza la educación de una persona.
 func SetEducation(db *sql.DB, education *models.Education) error {
 	query := `
-        INSERT INTO Education (PersonId, Institution, Degree, Campus, GraduationDate)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO Education (Id, PersonId, Institution, Degree, Campus, GraduationDate, IsCurrentlyStudying)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
         Institution = VALUES(Institution),
         Degree = VALUES(Degree),
         Campus = VALUES(Campus),
-        GraduationDate = VALUES(GraduationDate)
+        GraduationDate = VALUES(GraduationDate),
+        IsCurrentlyStudying = VALUES(IsCurrentlyStudying)
     `
-	_, err := db.Exec(query, education.PersonId, education.Institution, education.Degree, education.Campus, education.GraduationDate)
+	_, err := db.Exec(query,
+		education.Id,
+		education.PersonId,
+		education.Institution,
+		education.Degree,
+		education.Campus,
+		education.GraduationDate,
+		education.IsCurrentlyStudying,
+	)
 	if err != nil {
 		return fmt.Errorf("error al insertar/actualizar educación: %w", err)
 	}
@@ -193,7 +256,7 @@ func GetCV(db *sql.DB, personId int64) (*wsmodels.CurriculumVitae, error) {
 
 	// Obtener experiencia laboral
 	experienceQuery := `
-		SELECT w.Id, w.PersonId, w.Company, w.Position, w.StartDate, w.EndDate, w.Description, w.CountryId, n.CountryName
+		SELECT w.Id, w.PersonId, w.Company, w.Position, w.StartDate, w.EndDate, w.Description, w.CountryId, n.CountryName, w.IsCurrentJob
 		FROM WorkExperience w
 		LEFT JOIN Nationality n ON w.CountryId = n.Id
 		WHERE w.PersonId = ?
@@ -206,39 +269,32 @@ func GetCV(db *sql.DB, personId int64) (*wsmodels.CurriculumVitae, error) {
 
 	for experienceRows.Next() {
 		var exp models.WorkExperience
-		var countryName sql.NullString // Usar sql.NullString para CountryName ya que LEFT JOIN puede resultar en NULL
+		var countryName sql.NullString
 		if err := experienceRows.Scan(
-			&exp.Id, &exp.PersonId, &exp.Company, &exp.Position,
-			&exp.StartDate, &exp.EndDate, &exp.Description,
-			&exp.CountryId, &countryName,
+			&exp.Id,
+			&exp.PersonId,
+			&exp.Company,
+			&exp.Position,
+			&exp.StartDate,
+			&exp.EndDate,
+			&exp.Description,
+			&exp.CountryId,
+			&countryName,
+			&exp.IsCurrentJob,
 		); err != nil {
 			return nil, fmt.Errorf("error al escanear experiencia laboral: %w", err)
 		}
-
-		// Mapear de models.WorkExperience a wsmodels.WorkExperienceItem
 		expItem := wsmodels.WorkExperienceItem{
-			ID:          exp.Id,
-			Company:     exp.Company,
-			Position:    exp.Position,
-			Description: exp.Description,
+			ID:           exp.Id,
+			Company:      exp.Company,
+			Position:     exp.Position,
+			StartDate:    formatNullTimeToString(exp.StartDate, "2006-01-02"),
+			EndDate:      formatNullTimeToString(exp.EndDate, "2006-01-02"),
+			Description:  exp.Description.String,
+			CountryID:    safeNullInt64(exp.CountryId),
+			CountryName:  countryName.String,
+			IsCurrentJob: exp.IsCurrentJob.Bool,
 		}
-
-		if exp.StartDate.Valid {
-			expItem.StartDate = exp.StartDate.Time.Format("2006-01-02")
-		}
-
-		if exp.EndDate.Valid {
-			expItem.EndDate = exp.EndDate.Time.Format("2006-01-02")
-		}
-
-		if exp.CountryId.Valid {
-			expItem.CountryID = exp.CountryId.Int64
-		}
-
-		if countryName.Valid {
-			expItem.CountryName = countryName.String
-		}
-
 		cv.Experience = append(cv.Experience, expItem)
 	}
 
@@ -274,7 +330,11 @@ func GetCV(db *sql.DB, personId int64) (*wsmodels.CurriculumVitae, error) {
 	}
 
 	// Obtener proyectos
-	projectsQuery := `SELECT Id, PersonID, Title, Role, Description, Company, Document, ProjectStatus, StartDate, ExpectedEndDate FROM Project WHERE PersonID = ?`
+	projectsQuery := `
+		SELECT Id, PersonID, Title, Role, Description, Company, Document, ProjectStatus, StartDate, ExpectedEndDate, IsOngoing
+		FROM Project
+		WHERE PersonID = ?
+	`
 	projectsRows, err := db.Query(projectsQuery, personId)
 	if err != nil {
 		return nil, fmt.Errorf("error al obtener proyectos: %w", err)
@@ -284,33 +344,80 @@ func GetCV(db *sql.DB, personId int64) (*wsmodels.CurriculumVitae, error) {
 	for projectsRows.Next() {
 		var project models.Project
 		if err := projectsRows.Scan(
-			&project.Id, &project.PersonID, &project.Title, &project.Role,
-			&project.Description, &project.Company, &project.Document,
-			&project.ProjectStatus, &project.StartDate, &project.ExpectedEndDate,
+			&project.Id,
+			&project.PersonID,
+			&project.Title,
+			&project.Role,
+			&project.Description,
+			&project.Company,
+			&project.Document,
+			&project.ProjectStatus,
+			&project.StartDate,
+			&project.ExpectedEndDate,
+			&project.IsOngoing,
 		); err != nil {
 			return nil, fmt.Errorf("error al escanear proyecto: %w", err)
 		}
-
-		// Mapear de models.Project a wsmodels.ProjectItem
 		projectItem := wsmodels.ProjectItem{
 			ID:            project.Id,
 			Title:         project.Title,
-			Role:          project.Role,
-			Description:   project.Description,
-			Company:       project.Company,
-			Document:      project.Document,
-			ProjectStatus: project.ProjectStatus,
+			Role:          project.Role.String,
+			Description:   project.Description.String,
+			Company:       project.Company.String,
+			Document:      project.Document.String,
+			ProjectStatus: project.ProjectStatus.String,
+			IsOngoing:     project.IsOngoing.Bool,
 		}
-
 		if project.StartDate.Valid {
 			projectItem.StartDate = project.StartDate.Time.Format("2006-01-02")
 		}
-
 		if project.ExpectedEndDate.Valid {
 			projectItem.ExpectedEndDate = project.ExpectedEndDate.Time.Format("2006-01-02")
 		}
 
 		cv.Projects = append(cv.Projects, projectItem)
+	}
+
+	// Obtener educación
+	educationQuery := `
+		SELECT e.Id, e.PersonId, e.Institution, e.Degree, e.Campus, e.GraduationDate, e.CountryId, n.CountryName, e.IsCurrentlyStudying
+		FROM Education e
+		LEFT JOIN Nationality n ON e.CountryId = n.Id
+		WHERE e.PersonId = ?
+	`
+	educationRows, err := db.Query(educationQuery, personId)
+	if err != nil {
+		return nil, fmt.Errorf("error al obtener educación: %w", err)
+	}
+	defer educationRows.Close()
+
+	for educationRows.Next() {
+		var edu models.Education
+		var countryName sql.NullString
+		if err := educationRows.Scan(
+			&edu.Id,
+			&edu.PersonId,
+			&edu.Institution,
+			&edu.Degree,
+			&edu.Campus,
+			&edu.GraduationDate,
+			&edu.CountryId,
+			&countryName,
+			&edu.IsCurrentlyStudying,
+		); err != nil {
+			return nil, fmt.Errorf("error al escanear educación: %w", err)
+		}
+		eduItem := wsmodels.EducationItem{
+			ID:                  edu.Id,
+			Institution:         edu.Institution,
+			Degree:              edu.Degree,
+			Campus:              edu.Campus.String,
+			GraduationDate:      formatNullTimeToString(edu.GraduationDate, "2006-01-02"),
+			CountryID:           safeNullInt64(edu.CountryId),
+			CountryName:         countryName.String,
+			IsCurrentlyStudying: edu.IsCurrentlyStudying.Bool,
+		}
+		cv.Education = append(cv.Education, eduItem)
 	}
 
 	return cv, nil
