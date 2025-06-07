@@ -211,6 +211,7 @@ type DashboardDataPayload struct {
 	AdministrativeUsers  int64           `json:"administrativeUsers"`
 	BusinessAccounts     int64           `json:"businessAccounts"`
 	AlumniStudents       int64           `json:"alumniStudents"`
+	EgresadoUsers        int64           `json:"egresadoUsers"`
 	AverageUsageTime     string          `json:"averageUsageTime"` // Formato "Xh Ym" o similar
 	UsersByCampus        []UserByCampus  `json:"usersByCampus"`
 	MonthlyActivity      MonthlyActivity `json:"monthlyActivity"`

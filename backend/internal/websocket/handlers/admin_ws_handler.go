@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/db"
+	"github.com/davidM20/micro-service-backend-go.git/internal/services/admin"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
@@ -19,29 +21,25 @@ const adminWsHandlerLogComponent = "HANDLER_ADMIN_WS"
 func HandleGetDashboardInfo(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage) error {
 	logger.Infof(adminWsHandlerLogComponent, "Solicitud de información del dashboard recibida de UserID %d, PID: %s", conn.ID, msg.PID)
 
-	// Aquí iría la lógica para obtener los datos del dashboard:
-	// 1. Obtener activeUsers (podría ser desde conn.Manager() o admin.GetCollector() si se adapta)
-	// 2. Consultar totalRegisteredUsers, administrativeUsers, businessAccounts, alumniStudents desde la BD.
-	// 3. Consultar usersByCampus desde la BD.
-	// 4. Consultar monthlyActivity desde la BD.
-	// 5. Calcular averageUsageTime (esto es más complejo, podría ser un placeholder por ahora).
+	// Obtener la conexión a la BD
+	database := db.GetDB()
+	if database == nil {
+		err := fmt.Errorf("la conexión a la base de datos no está disponible")
+		logger.Errorf(adminWsHandlerLogComponent, "Error en HandleGetDashboardInfo: %v", err)
+		// Opcional: enviar un mensaje de error al cliente
+		conn.SendErrorNotification(msg.PID, 500, "Error interno del servidor: no se pudo conectar a la base de datos.")
+		return err
+	}
 
-	// Ejemplo de datos (reemplazar con datos reales de la BD y el sistema)
-	dashboardData := wsmodels.DashboardDataPayload{
-		ActiveUsers:          10,       // Placeholder
-		TotalRegisteredUsers: 100,      // Placeholder
-		AdministrativeUsers:  5,        // Placeholder
-		BusinessAccounts:     15,       // Placeholder
-		AlumniStudents:       70,       // Placeholder
-		AverageUsageTime:     "1h 30m", // Placeholder
-		UsersByCampus: []wsmodels.UserByCampus{
-			{Name: "Campus Central", Users: 50},
-			{Name: "Campus Norte", Users: 20},
-		},
-		MonthlyActivity: wsmodels.MonthlyActivity{
-			Labels: []string{"Ene", "Feb", "Mar"},
-			Data:   []int64{30, 45, 60},
-		},
+	// Obtener el número de usuarios activos desde el connection manager
+	activeUsers := conn.Manager().GetUserCount()
+
+	// Obtener los datos del dashboard desde el servicio
+	dashboardData, err := admin.GetDashboardData(activeUsers)
+	if err != nil {
+		logger.Errorf(adminWsHandlerLogComponent, "Error obteniendo datos del dashboard: %v", err)
+		conn.SendErrorNotification(msg.PID, 500, "Error obteniendo la información del dashboard.")
+		return err
 	}
 
 	responsePayload := map[string]interface{}{
@@ -58,13 +56,9 @@ func HandleGetDashboardInfo(conn *customws.Connection[wsmodels.WsUserData], msg 
 
 	if err := conn.SendMessage(responseMsg); err != nil {
 		logger.Errorf(adminWsHandlerLogComponent, "Error enviando datos del dashboard a UserID %d: %v", conn.ID, err)
-		// No necesariamente retornamos error al cliente aquí, ya que la solicitud original (data_request)
-		// podría haber recibido ya un ACK. El error es en el envío asíncrono de los datos.
 		return fmt.Errorf("error enviando datos del dashboard: %w", err)
 	}
 
 	logger.Successf(adminWsHandlerLogComponent, "Datos del dashboard enviados a UserID %d", conn.ID)
-	// El `data_request` original debería ser ack'd por `handelDataRequest.go` si el despacho fue exitoso.
-	// Este handler solo envía los datos solicitados.
 	return nil
 }

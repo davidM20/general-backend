@@ -795,6 +795,13 @@ func (cm *ConnectionManager[TUserData]) IsUserOnline(userID int64) bool {
 	return exists && len(conns) > 0
 }
 
+// GetUserCount devuelve el número de usuarios únicos con al menos una conexión activa.
+func (cm *ConnectionManager[TUserData]) GetUserCount() int {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return len(cm.userConnections)
+}
+
 // HandlePeerToPeerMessage maneja el envío de mensajes directos entre usuarios.
 // Verifica si el destinatario está en línea y envía el mensaje si es posible.
 func (cm *ConnectionManager[TUserData]) HandlePeerToPeerMessage(fromConn *Connection[TUserData], toUserID int64, msg types.ServerToClientMessage) error {

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
@@ -75,12 +76,6 @@ NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
  * - Adaptar los datos al formato wsmodels.FeedItem.
  */
 
-const (
-	// Role IDs confirmados por el usuario.
-	roleStudent = 1
-	roleCompany = 3
-)
-
 // GetRecentUsersForFeed recupera usuarios (estudiantes y empresas) para el feed.
 // TODO: Añadir lógica de paginación/límite y ordenamiento más sofisticado.
 func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
@@ -108,8 +103,8 @@ func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
 		ORDER BY u.CreatedAt DESC
 		LIMIT ?;
 	`
-	logger.Debugf("GetRecentUsersForFeed", "Ejecutando consulta de usuarios para feed con RoleStudent: %d, RoleCompany: %d, Limit: %d", roleStudent, roleCompany, limit)
-	rows, err := db.Query(query, roleStudent, roleCompany, limit)
+	logger.Debugf("GetRecentUsersForFeed", "Ejecutando consulta de usuarios para feed con RoleStudent: %d, RoleCompany: %d, Limit: %d", models.RoleStudent, models.RoleBusiness, limit)
+	rows, err := db.Query(query, models.RoleStudent, models.RoleBusiness, limit)
 	if err != nil {
 		logger.Errorf("GetRecentUsersForFeed", "Error al consultar usuarios para feed: %v", err)
 		return nil, err
@@ -141,7 +136,7 @@ func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
 		itemType := ""
 		var data interface{}
 
-		if roleID.Valid && roleID.Int64 == roleStudent {
+		if roleID.Valid && roleID.Int64 == int64(models.RoleStudent) {
 			itemType = "student"
 			data = wsmodels.StudentFeedData{
 				Name:        firstName.String + " " + lastName.String,
@@ -152,7 +147,7 @@ func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
 				Description: summary.String,
 			}
 			logger.Debugf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) procesado como ESTUDIANTE.", userID, userName.String)
-		} else if roleID.Valid && roleID.Int64 == roleCompany {
+		} else if roleID.Valid && roleID.Int64 == int64(models.RoleBusiness) {
 			itemType = "company"
 			data = wsmodels.CompanyFeedData{
 				Name:        companyName.String,
@@ -163,7 +158,7 @@ func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
 			}
 			logger.Debugf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) procesado como EMPRESA.", userID, userName.String)
 		} else {
-			logger.Warnf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) con RoleID %v no coincide con estudiante (%d) o empresa (%d), omitiendo.", userID, userName.String, roleID, roleStudent, roleCompany)
+			logger.Warnf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) con RoleID %v no coincide con estudiante (%d) o empresa (%d), omitiendo.", userID, userName.String, roleID, models.RoleStudent, models.RoleBusiness)
 			continue
 		}
 
