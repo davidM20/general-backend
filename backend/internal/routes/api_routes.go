@@ -115,6 +115,12 @@ const (
 
 	// Rutas de sistema
 	HealthPath = "/health"
+
+	// Rutas de Administrador
+	AdminPath           = "/admin"
+	AdminDashboardPath  = AdminPath + "/dashboard"
+	AdminUsersPath      = AdminPath + "/users"
+	AdminCategoriesPath = AdminPath + "/categories"
 )
 
 // SetupApiRoutes configura todas las rutas para el microservicio de API REST
@@ -168,13 +174,9 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
 	setupProtectedRoute(protected, MyCommunityEventsPath, handlers.communityEventHandler.GetMyCommunityEvents, http.MethodGet)
 
-	// TODO: Implementar estas rutas cuando estén disponibles:
-	// - GET /users/{userID:[0-9]+} - Ver perfil de otro usuario
-	// - PUT /users/me - Actualizar perfil
-	// - Gestión de empresas (listar, buscar, actualizar)
-	// - Rutas para administradores (gestión de roles, categorías, etc.)
-	// - Gestión de intereses
-	// - Gestión de tipos de mensajes
+	// Configurar rutas de administrador (requieren rol de administrador)
+	setupAdminRoutes(api, handlers.adminHandler, db, cfg)
+
 }
 
 // Estructura para agrupar todos los handlers y facilitar su paso a las funciones
@@ -190,6 +192,7 @@ type serviceHandlers struct {
 	audioHandler          *handlers.AudioHandler
 	pdfHandler            *handlers.PDFHandler
 	videoHandler          *handlers.VideoHandler
+	adminHandler          *handlers.AdminHandler
 }
 
 // initializeHandlers crea e inicializa todas las instancias de handlers necesarias
@@ -212,6 +215,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		audioHandler:          handlers.NewAudioHandler(audioUploadService, cfg),
 		pdfHandler:            handlers.NewPDFHandler(pdfUploadService, cfg),
 		videoHandler:          handlers.NewVideoHandler(videoUploadService, db, cfg),
+		adminHandler:          handlers.NewAdminHandler(db, cfg),
 	}
 }
 
@@ -268,8 +272,26 @@ func setupProtectedRoute(router *mux.Router, path string, handler http.HandlerFu
 	router.HandleFunc(path, handler).Methods(method)
 }
 
+// setupAdminRoutes configura las rutas que requieren privilegios de administrador.
+// Aplica tanto el middleware de autenticación como el de verificación de rol de administrador.
+func setupAdminRoutes(router *mux.Router, adminHandler *handlers.AdminHandler, db *sql.DB, cfg *config.Config) {
+	adminRouter := router.PathPrefix(AdminPath).Subrouter()
+
+	// Cadena de middlewares: primero autenticación, luego validación de rol y sesión de admin.
+	adminRouter.Use(middleware.AuthMiddleware(cfg))
+	adminRouter.Use(middleware.AdminMiddleware(db))
+
+	// Dashboard de administrador
+	adminRouter.HandleFunc("/dashboard", adminHandler.GetDashboard).Methods(http.MethodGet)
+
+	// TODO: Implementar los siguientes handlers y rutas
+	// adminRouter.HandleFunc("/users", adminHandler.ListUsers).Methods(http.MethodGet)
+	// adminRouter.HandleFunc("/users/{id}", adminHandler.ManageUser).Methods(http.MethodPut, http.MethodDelete)
+	// adminRouter.HandleFunc("/categories", adminHandler.ManageCategories).Methods(http.MethodPost, http.MethodPut)
+}
+
 // TODO: Añadir funciones para las siguientes rutas cuando se implementen:
 // - setupProtectedEnterpriseRoutes: Gestión de empresas (listar, buscar, actualizar)
-// - setupAdminRoutes: Rutas para administradores (gestión de roles, categorías, etc.)
+// - setupAdminRoutes: Rutas para administradores (gestión de roles, categorías, etc.) - ¡HECHO!
 // - setupInterestsRoutes: Gestión de intereses
 // - setupMessagingRoutes: Gestión de tipos de mensajes

@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/auth"   // Para JWT y hash de contraseña
@@ -320,39 +321,83 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expirationTime := 24 * time.Hour
+	// Generar el token JWT
+	expirationTime := time.Hour * 24 * 360 // Token válido por 24 horas
 	tokenString, err := auth.GenerateJWT(user.Id, int64(user.RoleId), []byte(h.Cfg.JwtSecret), expirationTime)
 	if err != nil {
-		logger.Errorf("LOGIN", "Failed generating JWT for UserID %d: %v", user.Id, err)
+		logger.Errorf("LOGIN", "Error generating JWT for user %s: %v", req.Email, err)
 		http.Error(w, "Error generating session token", http.StatusInternalServerError)
 		return
 	}
 
-	// Obtener la IP del cliente
-	clientIP := r.RemoteAddr
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		clientIP = forwarded
-	} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-		clientIP = realIP
-	}
-
 	// Insertar el token en la tabla Session usando la consulta centralizada
+	clientIP := getClientIP(r)
 	err = queries.RegisterUserSession(h.DB, user.Id, tokenString, clientIP, user.RoleId)
 	if err != nil {
+		logger.Errorf("LOGIN", "Error creating session for user %s: %v", req.Email, err)
 		http.Error(w, "Error creating session", http.StatusInternalServerError)
 		return
 	}
 
-	// Nota: Ahora convertimos el User a UserDTO para limpiar los campos sql.Null*
-	resp := models.LoginResponse{
-		Token: tokenString,
-		User:  user.ToUserDTO(), // Usar el método ToUserDTO para limpiar la respuesta
+	// Si el usuario es administrador, enviar notificación de seguridad en una goroutine
+	if user.RoleId == int(models.RoleAdmin) {
+		go h.handleAdminLoginNotification(user, clientIP)
 	}
 
-	logger.Successf("LOGIN", "User %s (ID: %d) logged in successfully", req.Email, user.Id)
+	// Preparar la respuesta
+	resp := models.LoginResponse{
+		Token: tokenString,
+		User:  user.ToUserDTO(),
+	}
+
+	logger.Successf("LOGIN", "User %s (ID: %d) logged in successfully from IP %s", req.Email, user.Id, clientIP)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// handleAdminLoginNotification se encarga de enviar las notificaciones de inicio de sesión de admin.
+func (h *AuthHandler) handleAdminLoginNotification(user models.User, ipAddress string) {
+	// 1. Enviar correo electrónico
+	err := sendAdminLoginNotification(user.Email, ipAddress)
+	if err != nil {
+		// El error ya se registra dentro de la función sendAdminLoginNotification
+		logger.Warnf("ADMIN_LOGIN_NOTIF", "Failed to send admin login email for user %s, but login process continued.", user.Email)
+	}
+
+	j, err := json.Marshal(map[string]interface{}{"ipAddress": ipAddress, "alertSecurity": true})
+	if err != nil {
+		logger.Errorf("ADMIN_LOGIN_NOTIF", "Failed to marshal metadata: %v", err)
+	}
+
+	// 2. Crear notificación en la app
+	notif := models.Event{
+		EventType:      "ADMIN_LOGIN",
+		EventTitle:     "Alerta de Seguridad: Inicio de Sesión de Administrador",
+		Description:    fmt.Sprintf("Se ha iniciado sesión en una cuenta de administrador desde la IP: %s a las %s.", ipAddress, time.Now().Format("2006-01-02 15:04:05")),
+		UserId:         user.Id,
+		ActionRequired: true,
+		Metadata:       j,
+	}
+	if _, err := queries.CreateNotification(notif); err != nil {
+		logger.Errorf("ADMIN_LOGIN_NOTIF", "Failed to create admin login app notification for user ID %d: %v", user.Id, err)
+	}
+}
+
+// getClientIP obtiene la dirección IP real del cliente.
+func getClientIP(r *http.Request) string {
+	// Primero, intenta obtener la IP desde X-Forwarded-For, que puede contener una lista de IPs.
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		// La IP del cliente suele ser la primera en la lista.
+		ips := strings.Split(forwarded, ",")
+		return strings.TrimSpace(ips[0])
+	}
+	// Si no, prueba con X-Real-IP.
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return realIP
+	}
+	// Finalmente, usa RemoteAddr como fallback.
+	return r.RemoteAddr
 }
 
 // RequestPasswordReset maneja la solicitud de restablecimiento de contraseña
@@ -667,5 +712,64 @@ func sendPasswordResetEmail(code, email string) error {
 	}
 
 	logger.Successf("RESET_PASSWORD", "Password reset email sent to %s", email)
+	return nil
+}
+
+// generateAdminLoginAlertEmail crea el contenido HTML para la alerta de inicio de sesión de administrador.
+func generateAdminLoginAlertEmail(ipAddress string) string {
+	logo := `<svg width="180" height="60" viewBox="0 0 180 60" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="15" width="40" height="30" rx="2" fill="#B22222" /><polygon points="55,15 65,15 65,45 55,45 60,30" fill="#FF4500" /><text x="70" y="38" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#333">ALERTA</text><rect x="70" y="42" width="60" height="2" rx="1" fill="#B22222" /></svg>`
+	now := time.Now().Format("02 Jan 2006 at 15:04:05 MST")
+
+	return fmt.Sprintf(`
+	<div style='background-color: #fdf2f2; padding: 30px; font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border-left: 5px solid #B22222;'>
+		<div style='background-color: white; border-radius: 8px; padding: 40px 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.07);'>
+			<div style='text-align: center; margin-bottom: 25px;'>
+				%s
+			</div>
+			
+			<h2 style='color: #B22222; font-size: 24px; margin-bottom: 20px; text-align: center;'>
+				Alerta de Seguridad: Inicio de Sesión de Administrador
+			</h2>
+			
+			<p style='color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 15px;'>
+				Este es un aviso de seguridad para informarle que se ha producido un inicio de sesión en su cuenta de administrador.
+			</p>
+			
+			<div style='background-color: #fff8f8; border: 1px solid #fde2e2; border-radius: 8px; padding: 20px; margin: 25px 0;'>
+				<p style='margin: 5px 0; font-size: 16px;'><strong style='color: #555;'>Dirección IP:</strong> <span style='font-family: monospace; color: #B22222;'>%s</span></p>
+				<p style='margin: 5px 0; font-size: 16px;'><strong style='color: #555;'>Fecha y Hora:</strong> %s</p>
+			</div>
+			
+			<p style='color: #333; font-size: 16px; line-height: 1.6;'>
+				Si reconoce esta actividad, no necesita realizar ninguna acción. Si <strong>no</strong> ha sido usted, por favor, cambie su contraseña inmediatamente y contacte con el soporte técnico.
+			</p>
+			
+			<hr style='border: none; border-top: 1px solid #eee; margin: 30px 0;'>
+			
+			<p style='color: #999; font-size: 14px; text-align: center;'>
+				© %d Asendia Security. Este es un mensaje automático.
+			</p>
+		</div>
+	</div>`, logo, ipAddress, now, time.Now().Year())
+}
+
+// sendAdminLoginNotification envía un correo de alerta de inicio de sesión a un administrador.
+func sendAdminLoginNotification(email, ipAddress string) error {
+	m := mail.NewMessage()
+	m.SetHeader("From", "d18tarazona@gmail.com")
+	m.SetHeader("To", email)
+	m.SetHeader("Subject", "⚠️ Alerta de Seguridad: Inicio de Sesión de Administrador Detectado")
+
+	htmlContent := generateAdminLoginAlertEmail(ipAddress)
+	m.SetBody("text/html", htmlContent)
+
+	d := mail.NewDialer("smtp.gmail.com", 587, "d18tarazona@gmail.com", "hcyhtmyolvvdiauk")
+
+	if err := d.DialAndSend(m); err != nil {
+		logger.Errorf("ADMIN_LOGIN_NOTIF", "Error sending security alert email to %s: %v", email, err)
+		return err
+	}
+
+	logger.Successf("ADMIN_LOGIN_NOTIF", "Security alert email sent successfully to %s", email)
 	return nil
 }

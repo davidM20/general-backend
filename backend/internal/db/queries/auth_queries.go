@@ -273,16 +273,29 @@ func RegisterUserSession(db *sql.DB, userId int64, token, ip string, roleId int)
 		INSERT INTO Session (UserId, Tk, Ip, RoleId, TokenId)
 		VALUES (?, ?, ?, ?, ?)
 	`
-
-	err := MeasureQuery(func() error {
-		_, err := db.Exec(query, userId, token, ip, roleId, 0) // TokenId = 0 por ahora
-		return err
-	})
-
+	_, err := db.Exec(query, userId, token, ip, roleId, 0) // TokenId = 0 por ahora
 	if err != nil {
 		logger.Errorf("AUTH_QUERIES", "Failed inserting session for UserID %d: %v", userId, err)
 		return err
 	}
-
 	return nil
 }
+
+// IsSessionValid verifica si un token de sesión para un usuario específico es válido.
+// Devuelve true si la sesión existe en la base de datos, de lo contrario false.
+func IsSessionValid(db *sql.DB, userId int64, token string) (bool, error) {
+	query := "SELECT EXISTS(SELECT 1 FROM Session WHERE UserId = ? AND Tk = ?)"
+	var exists bool
+	err := db.QueryRow(query, userId, token).Scan(&exists)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil // No es un error, simplemente no existe
+		}
+		logger.Errorf("AUTH_QUERIES", "Error verifying session for UserID %d: %v", userId, err)
+		return false, err
+	}
+	return exists, nil
+}
+
+// TODO: Implementar la invalidación de sesiones (logout) eliminando el registro de la BD.
+// func InvalidateUserSession(db *sql.DB, userId int64, token string) error { ... }
