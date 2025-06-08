@@ -810,11 +810,8 @@ func GetProjectItemsForUser(personID int64) ([]models.Project, error) {
 
 // GetContactByChatID recupera la información de un contacto por su ChatId.
 func GetContactByChatID(chatID string) (*models.Contact, error) {
-	contact := &models.Contact{}
-	query := `SELECT ContactId, User1Id, User2Id, Status, ChatId
-	          FROM Contact
-	          WHERE ChatId = ? LIMIT 1`
-
+	query := `SELECT ContactId, User1Id, User2Id, Status, ChatId FROM Contact WHERE ChatId = ?`
+	var contact models.Contact
 	err := DB.QueryRow(query, chatID).Scan(
 		&contact.ContactId,
 		&contact.User1Id,
@@ -822,14 +819,50 @@ func GetContactByChatID(chatID string) (*models.Contact, error) {
 		&contact.Status,
 		&contact.ChatId,
 	)
-
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("contacto con ChatID %s no encontrado", chatID)
+			return nil, fmt.Errorf("no se encontró contacto con ChatID %s: %w", chatID, err)
 		}
-		return nil, fmt.Errorf("error consultando contacto por ChatID %s: %w", chatID, err)
+		return nil, fmt.Errorf("error al buscar contacto por ChatID %s: %w", chatID, err)
 	}
-	return contact, nil
+	return &contact, nil
+}
+
+// GetGroupMembersByChatID recupera todos los ID de usuario para un ID de chat de grupo determinado.
+func GetGroupMembersByChatID(chatID string) ([]models.GroupMember, error) {
+	var groupID int64
+	// Primero, obtenemos el ID del grupo a partir del ChatId.
+	err := DB.QueryRow("SELECT Id FROM GroupsUsers WHERE ChatId = ?", chatID).Scan(&groupID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no se encontró un grupo con el ChatId: %s", chatID)
+		}
+		return nil, fmt.Errorf("error al buscar el ID del grupo: %w", err)
+	}
+
+	// Luego, obtenemos todos los miembros de ese grupo.
+	rows, err := DB.Query("SELECT UserId FROM GroupMembers WHERE GroupId = ?", groupID)
+	if err != nil {
+		return nil, fmt.Errorf("error al obtener los miembros del grupo: %w", err)
+	}
+	defer rows.Close()
+
+	var members []models.GroupMember
+	for rows.Next() {
+		var member models.GroupMember
+		// Escaneamos solo el UserId, ya que es lo que se seleccionó.
+		if err := rows.Scan(&member.UserID); err != nil {
+			return nil, fmt.Errorf("error al escanear miembro del grupo: %w", err)
+		}
+		member.GroupID = groupID // Asignamos el GroupID que ya conocemos.
+		members = append(members, member)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error durante la iteración de miembros del grupo: %w", err)
+	}
+
+	return members, nil
 }
 
 // GetUserOnlineStatus obtiene el estado online de un usuario desde la tabla Online.

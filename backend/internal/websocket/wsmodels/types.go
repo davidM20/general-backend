@@ -178,22 +178,20 @@ type EnterpriseInfo struct {
 	// Se podría añadir un logo o imagen de la empresa
 }
 
-// MessageDB representa un mensaje tal como se almacena y se transmite para el historial.
-// Los campos se basan en la tabla Message y las necesidades del frontend.
+// MessageDB representa la estructura de un mensaje como se almacena en la base de datos,
+// alineada con la tabla 'Message' del schema.sql robusto.
 type MessageDB struct {
-	Id            string `json:"id"`           // ID único del mensaje (UUID)
-	ChatId        string `json:"chatId"`       // ID del chat al que pertenece
-	FromUserId    int64  `json:"fromUserId"`   // ID del usuario que envió el mensaje
-	TargetUserId  int64  `json:"targetUserId"` // ID del usuario/grupo destinatario
-	Text          string `json:"text"`         // Contenido del mensaje
-	Timestamp     string `json:"timestamp"`    // Timestamp ISO8601 UTC del mensaje. Equivalente a 'Date' de la BD pero como string.
-	Status        string `json:"status"`       // Estado del mensaje (ej: "sent", "delivered", "read"). Mapea desde 'StatusMessage'.
-	TypeMessageId int64  `json:"typeMessageId,omitempty"`
-	MediaId       string `json:"mediaId,omitempty"`
-	// Campos que podrían ser necesarios del schema.sql y el frontend:
-	ResponseTo string `json:"responseTo,omitempty"`
-	// ChatIdGroup   string `json:"chatIdGroup,omitempty"`
-	// IsMyMessage   int    `json:"isMyMessage,omitempty"` // El frontend lo calcula, pero podría venir del backend
+	Id               string  `json:"id"`                         // ID único del mensaje (UUID).
+	ChatId           *string `json:"chatId,omitempty"`           // ID del chat privado, nulo si es un mensaje de grupo.
+	ChatIdGroup      *string `json:"chatIdGroup,omitempty"`      // ID del grupo, nulo si es un mensaje privado.
+	SenderId         int64   `json:"senderId"`                   // ID del usuario que envió el mensaje.
+	TypeMessageId    int64   `json:"typeMessageId"`              // ID del tipo de mensaje.
+	Content          *string `json:"content,omitempty"`          // Contenido de texto del mensaje, nulo si es solo multimedia.
+	MediaId          *string `json:"mediaId,omitempty"`          // ID del archivo multimedia adjunto, nulo si es solo texto.
+	ReplyToMessageId *string `json:"replyToMessageId,omitempty"` // ID del mensaje al que se responde.
+	SentAt           string  `json:"sentAt"`                     // Timestamp ISO8601 UTC del envío.
+	EditedAt         *string `json:"editedAt,omitempty"`         // Timestamp ISO8601 UTC de la última edición.
+	Status           string  `json:"status"`                     // Estado: 'sending', 'sent', 'delivered', 'read', 'failed'.
 }
 
 // WsMessage es una estructura genérica para los mensajes WebSocket salientes.

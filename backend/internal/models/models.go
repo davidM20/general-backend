@@ -125,6 +125,22 @@ type Contact struct {
 	ChatId    string `json:"chat_id" db:"ChatId"`
 }
 
+// GroupsUsers defines the structure for the GroupsUsers table.
+type GroupsUsers struct {
+	Id           int64          `json:"id" db:"Id"`
+	Name         string         `json:"name" db:"Name"`
+	Description  sql.NullString `json:"description" db:"Description"`
+	Picture      sql.NullString `json:"picture" db:"Picture"`
+	AdminOfGroup int64          `json:"admin_of_group" db:"AdminOfGroup"`
+	ChatId       string         `json:"chat_id" db:"ChatId"`
+}
+
+// GroupMember defines the structure for a record in the GroupMembers table.
+type GroupMember struct {
+	UserID  int64 `json:"user_id" db:"UserId"`
+	GroupID int64 `json:"group_id" db:"GroupId"`
+}
+
 // ChatInfoQueryResult es una estructura para contener los resultados de la consulta de lista de chat optimizada.
 type ChatInfoQueryResult struct {
 	ChatID                string

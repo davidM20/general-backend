@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
-	"github.com/davidM20/micro-service-backend-go.git/internal/models" // Alias para el paquete que contiene ChatInfo
+	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries" // Alias para el paquete que contiene ChatInfo
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
 	customwsTypes "github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
@@ -81,11 +80,7 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 	return chatList, nil
 }
 
-// ProcessAndSaveChatMessage se encarga de tomar los datos de un mensaje de chat entrante,
-// validarlos (parcialmente, el handler puede hacer más), guardarlos en la BD
-// y devolver el mensaje guardado para su posterior envío.
-// También busca al usuario destino y le envía el mensaje si está en línea.
-func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, messageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*models.Message, error) {
+func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, messageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*wsmodels.MessageDB, error) {
 	if chatDB == nil {
 		return nil, errors.New("servicio de chat no inicializado con conexión a BD")
 	}
@@ -94,136 +89,175 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 	}
 
 	// Extraer y validar campos del payload
-	chatId, ok := payload["chatId"].(string)
-	if !ok || chatId == "" {
-		return nil, errors.New("ChatId es requerido y debe ser un string")
+	chatId, _ := payload["chatId"].(string)
+	chatIdGroup, _ := payload["chatIdGroup"].(string)
+
+	// Un mensaje debe pertenecer a un chat privado o a un grupo, no a ambos.
+	if (chatId == "" && chatIdGroup == "") || (chatId != "" && chatIdGroup != "") {
+		return nil, errors.New("se debe proporcionar un chatId o un chatIdGroup, pero no ambos")
 	}
 
-	text, _ := payload["text"].(string) // El texto puede ser opcional si hay MediaId
+	content, _ := payload["content"].(string)
 	mediaId, _ := payload["mediaId"].(string)
-	responseTo, _ := payload["responseTo"].(string)
+	replyToMessageId, _ := payload["replyToMessageId"].(string)
 
-	if text == "" && mediaId == "" { // Un mensaje debe tener texto o media
-		return nil, errors.New("el mensaje no puede estar vacío, debe contener texto o media")
+	// Un mensaje debe tener contenido de texto o un adjunto.
+	if content == "" && mediaId == "" {
+		return nil, errors.New("el mensaje no puede estar vacío, debe contener contenido o media")
 	}
 
 	// Determinar TypeMessageId basado en si hay MediaId o no.
 	var typeMessageID int64 = 1 // Por defecto, texto
 	if mediaId != "" {
-		typeMessageID = 2 // Asumimos 2 para mensajes con media. Ajusta según tu tabla TypeMessage.
-		// Podrías tener una lógica más compleja aquí, por ejemplo, leer el tipo de la tabla Multimedia.
+		typeMessageID = 2 // Asumimos 2 para mensajes con media.
 	}
 
-	newMessage := &models.Message{
-		Id:            messageID, // Usar el ID generado en el handler
-		ChatId:        chatId,
-		Text:          text,
-		UserId:        userID, // ID del remitente
-		Date:          time.Now().UTC(),
-		TypeMessageId: typeMessageID,
-		StatusMessage: queries.StatusMessageSent, // Estado inicial: Enviado
-		MediaId:       mediaId,                   // Puede ser string vacío
-		ResponseTo:    responseTo,                // Puede ser string vacío
-	}
+	// --- Guardar el mensaje en la base de datos con el nuevo esquema ---
+	sentAt := time.Now().UTC()
+	status := "sent"
 
-	// Guardar el mensaje en la base de datos
-	createdMsgID, err := queries.CreateMessage(newMessage)
+	// Usamos sql.NullString para campos que podrían estar vacíos
+	dbChatId := sql.NullString{String: chatId, Valid: chatId != ""}
+	dbChatIdGroup := sql.NullString{String: chatIdGroup, Valid: chatIdGroup != ""}
+	dbContent := sql.NullString{String: content, Valid: content != ""}
+	dbMediaId := sql.NullString{String: mediaId, Valid: mediaId != ""}
+	dbReplyToId := sql.NullString{String: replyToMessageId, Valid: replyToMessageId != ""}
+
+	query := `INSERT INTO Message (Id, ChatId, ChatIdGroup, SenderId, Content, Status, TypeMessageId, MediaId, ReplyToMessageId, SentAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := chatDB.Exec(query, messageID, dbChatId, dbChatIdGroup, userID, dbContent, status, typeMessageID, dbMediaId, dbReplyToId, sentAt)
 	if err != nil {
-		logger.Errorf("SERVICE_CHAT", "Error guardando mensaje para UserID %d, ChatID %s: %v", userID, chatId, err)
+		logContext := fmt.Sprintf("UserID %d", userID)
+		if chatId != "" {
+			logContext += fmt.Sprintf(", ChatID %s", chatId)
+		}
+		if chatIdGroup != "" {
+			logContext += fmt.Sprintf(", ChatIdGroup %s", chatIdGroup)
+		}
+		logger.Errorf("SERVICE_CHAT", "Error guardando mensaje para %s: %v", logContext, err)
 		return nil, fmt.Errorf("error guardando mensaje en DB: %w", err)
 	}
 
-	newMessage.Id = createdMsgID // Asegurarse de que el ID en el struct es el devuelto por la BD
+	logger.Infof("SERVICE_CHAT", "Mensaje guardado (ID: %s) de UserID %d", messageID, userID)
 
-	logger.Infof("SERVICE_CHAT", "Mensaje guardado (ID: %s) para UserID %d en ChatID %s", createdMsgID, userID, chatId)
-
-	// --- Lógica para encontrar destinatario y enviar si está en línea ---
-
-	// 1. Obtener información del chat/contacto para identificar al destinatario
-	contact, err := queries.GetContactByChatID(chatId)
-	if err != nil {
-		logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s después de guardar mensaje: %v", chatId, err)
-		return newMessage, fmt.Errorf("mensaje guardado pero error obteniendo datos del chat para envío: %w", err)
+	// --- Construir el objeto de mensaje para la transmisión y retorno ---
+	var contentPtr, mediaIdPtr, replyToPtr *string
+	if dbContent.Valid {
+		contentPtr = &dbContent.String
+	}
+	if dbMediaId.Valid {
+		mediaIdPtr = &dbMediaId.String
+	}
+	if dbReplyToId.Valid {
+		replyToPtr = &dbReplyToId.String
 	}
 
-	// 2. Identificar al usuario destinatario
-	var recipientUserID int64
-	if userID == contact.User1Id {
-		recipientUserID = contact.User2Id
-	} else if userID == contact.User2Id {
-		recipientUserID = contact.User1Id
-	} else {
-		logger.Errorf("SERVICE_CHAT", "El remitente del mensaje (UserID %d) no coincide con los participantes del ContactID %s (User1: %d, User2: %d)", userID, contact.ContactId, contact.User1Id, contact.User2Id)
-		return newMessage, fmt.Errorf("mensaje guardado pero remitente no coincide con participantes del chat")
+	var chatIdPtr, chatIdGroupPtr *string
+	if dbChatId.Valid {
+		chatIdPtr = &dbChatId.String
+	}
+	if dbChatIdGroup.Valid {
+		chatIdGroupPtr = &dbChatIdGroup.String
 	}
 
-	// 3. Verificar si el destinatario está en línea
-	isRecipientOnline := manager.IsUserOnline(recipientUserID)
+	messageToSend := &wsmodels.MessageDB{
+		Id:               messageID,
+		ChatId:           chatIdPtr,
+		ChatIdGroup:      chatIdGroupPtr,
+		SenderId:         userID,
+		Content:          contentPtr,
+		SentAt:           sentAt.Format(time.RFC3339Nano),
+		Status:           status,
+		TypeMessageId:    typeMessageID,
+		MediaId:          mediaIdPtr,
+		ReplyToMessageId: replyToPtr,
+	}
 
-	// Verificar también el estado en la base de datos
-	dbOnlineStatus, err := queries.GetUserOnlineStatus(recipientUserID)
-	if err != nil {
-		logger.Warnf("SERVICE_CHAT", "Error obteniendo estado online de BD para UserID %d: %v", recipientUserID, err)
-	} else if dbOnlineStatus != isRecipientOnline {
-		// Si hay discrepancia, actualizar el estado en la BD para que coincida con el estado WebSocket
-		logger.Warnf("SERVICE_CHAT", "Desincronización detectada para UserID %d: WS=%v, DB=%v. Actualizando BD.",
-			recipientUserID, isRecipientOnline, dbOnlineStatus)
-		err = queries.SetUserOnlineStatus(recipientUserID, isRecipientOnline)
+	// --- Lógica para encontrar destinatario(s) y enviar si están en línea ---
+	if chatId != "" {
+		// Lógica para chat privado (1 a 1)
+		contact, err := queries.GetContactByChatID(chatId)
 		if err != nil {
-			logger.Errorf("SERVICE_CHAT", "Error actualizando estado online en BD para UserID %d: %v", recipientUserID, err)
+			logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s después de guardar mensaje: %v", chatId, err)
+			return messageToSend, fmt.Errorf("mensaje guardado pero error obteniendo datos del chat para envío: %w", err)
 		}
-	}
 
-	// Solo consideramos al usuario en línea si tiene una conexión WebSocket activa
-	// El estado en la BD es solo informativo
-	logger.Infof("SERVICE_CHAT", "Destinatario UserID %d para ChatID %s está en línea (WS: %v, DB: %v): %v",
-		recipientUserID, chatId, isRecipientOnline, dbOnlineStatus, isRecipientOnline)
+		var recipientUserID int64
+		if userID == contact.User1Id {
+			recipientUserID = contact.User2Id
+		} else if userID == contact.User2Id {
+			recipientUserID = contact.User1Id
+		} else {
+			logger.Errorf("SERVICE_CHAT", "El remitente del mensaje (UserID %d) no coincide con los participantes del ContactID %s (User1: %d, User2: %d)", userID, contact.ContactId, contact.User1Id, contact.User2Id)
+			return messageToSend, fmt.Errorf("mensaje guardado pero remitente no coincide con participantes del chat")
+		}
 
-	// 4. Si está en línea, enviar el mensaje
-	if isRecipientOnline {
-		messageToSend := wsmodels.MessageDB{
-			Id:            newMessage.Id,
-			ChatId:        newMessage.ChatId,
-			FromUserId:    newMessage.UserId,
-			TargetUserId:  recipientUserID,
-			Text:          newMessage.Text,
-			Timestamp:     newMessage.Date.UTC().Format(time.RFC3339Nano),
-			Status:        MapStatusMessageToString(newMessage.StatusMessage),
-			TypeMessageId: newMessage.TypeMessageId,
-			MediaId:       newMessage.MediaId,
-			ResponseTo:    newMessage.ResponseTo,
+		if manager.IsUserOnline(recipientUserID) {
+			serverMessage := customwsTypes.ServerToClientMessage{
+				Type:       customwsTypes.MessageTypeNewChatMessage,
+				FromUserID: userID,
+				Payload:    messageToSend,
+				PID:        manager.Callbacks().GeneratePID(),
+			}
+
+			fromConn, found := manager.GetConnection(userID)
+			if !found {
+				logger.Errorf("SERVICE_CHAT", "No se encontró conexión para el remitente UserID %d", userID)
+				return messageToSend, fmt.Errorf("error: remitente no conectado")
+			}
+
+			if err := manager.HandlePeerToPeerMessage(fromConn, recipientUserID, serverMessage); err != nil {
+				logger.Errorf("SERVICE_CHAT", "Error enviando mensaje (ID: %s) a UserID %d: %v", messageToSend.Id, recipientUserID, err)
+			} else {
+				logger.Successf("SERVICE_CHAT", "Mensaje (ID: %s) enviado exitosamente a UserID %d", messageToSend.Id, recipientUserID)
+			}
+		} else {
+			logger.Infof("SERVICE_CHAT", "Destinatario UserID %d no está en línea, mensaje (ID: %s) guardado pero no enviado inmediatamente.", recipientUserID, messageToSend.Id)
+		}
+
+	} else if chatIdGroup != "" {
+		// Lógica para chat de grupo
+		// Asumiendo que existe una función `GetGroupMembersByChatID` que retorna los miembros del grupo.
+		groupMembers, err := queries.GetGroupMembersByChatID(chatIdGroup)
+		if err != nil {
+			logger.Errorf("SERVICE_CHAT", "Error obteniendo miembros del grupo para ChatIdGroup %s: %v", chatIdGroup, err)
+			return messageToSend, fmt.Errorf("mensaje guardado pero no se pudieron obtener los miembros del grupo: %w", err)
 		}
 
 		serverMessage := customwsTypes.ServerToClientMessage{
 			Type:       customwsTypes.MessageTypeNewChatMessage,
-			FromUserID: newMessage.UserId,
+			FromUserID: userID,
 			Payload:    messageToSend,
 			PID:        manager.Callbacks().GeneratePID(),
 		}
 
-		// Obtener la conexión del remitente
 		fromConn, found := manager.GetConnection(userID)
 		if !found {
 			logger.Errorf("SERVICE_CHAT", "No se encontró conexión para el remitente UserID %d", userID)
-			return newMessage, fmt.Errorf("error: remitente no conectado")
+			return messageToSend, fmt.Errorf("error: remitente no conectado")
 		}
 
-		// Usar HandlePeerToPeerMessage para enviar el mensaje
-		err := manager.HandlePeerToPeerMessage(fromConn, recipientUserID, serverMessage)
-		if err != nil {
-			logger.Errorf("SERVICE_CHAT", "Error enviando mensaje (ID: %s) a UserID %d: %v", newMessage.Id, recipientUserID, err)
-		} else {
-			logger.Successf("SERVICE_CHAT", "Mensaje (ID: %s) enviado exitosamente a UserID %d", newMessage.Id, recipientUserID)
+		for _, member := range groupMembers {
+			// No enviar el mensaje al propio remitente.
+			if member.UserID == userID {
+				continue
+			}
+
+			if manager.IsUserOnline(member.UserID) {
+				if err := manager.HandlePeerToPeerMessage(fromConn, member.UserID, serverMessage); err != nil {
+					logger.Errorf("SERVICE_CHAT", "Error enviando mensaje de grupo (ID: %s) a UserID %d: %v", messageToSend.Id, member.UserID, err)
+				} else {
+					logger.Successf("SERVICE_CHAT", "Mensaje de grupo (ID: %s) enviado exitosamente a UserID %d", messageToSend.Id, member.UserID)
+				}
+			} else {
+				logger.Infof("SERVICE_CHAT", "Miembro del grupo UserID %d no está en línea para recibir mensaje (ID: %s)", member.UserID, messageToSend.Id)
+			}
 		}
-	} else {
-		logger.Infof("SERVICE_CHAT", "Destinatario UserID %d no está en línea, mensaje (ID: %s) guardado pero no enviado inmediatamente.", recipientUserID, newMessage.Id)
 	}
 
-	return newMessage, nil
+	return messageToSend, nil
 }
 
-// GetChatHistory recupera el historial de mensajes para un chat específico.
-// Implementa paginación basada en beforeMessageID y limit.
 func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) ([]wsmodels.MessageDB, error) {
 	if chatDB == nil {
 		return nil, errors.New("GetChatHistory: chat service no inicializado con conexión a BD")
@@ -231,41 +265,37 @@ func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID stri
 
 	logger.Infof("SERVICE_CHAT", "Recuperando historial para ChatID: %s, UserID: %d, Limit: %d, BeforeMessageID: %s", chatID, userID, limit, beforeMessageID)
 
-	// Obtener participantes del chat para determinar TargetUserId en cada mensaje
-	contact, err := queries.GetContactByChatID(chatID) // Asumiendo que esta función existe o la creas
-	if err != nil {
-		logger.Errorf("SERVICE_CHAT", "Error obteniendo información del contacto para ChatID %s: %v", chatID, err)
-		return nil, fmt.Errorf("error obteniendo datos del chat: %w", err)
-	}
+	// Consulta base
+	query := `
+        SELECT Id, SenderId, Content, SentAt, Status, TypeMessageId, MediaId, ReplyToMessageId, EditedAt, ChatIdGroup
+        FROM Message
+        WHERE ChatId = ?
+    `
+	args := []interface{}{chatID}
 
-	var args []interface{}
-	query := `SELECT Id, UserId, Text, Date, StatusMessage, TypeMessageId, MediaId FROM Message WHERE ChatId = ?`
-	args = append(args, chatID)
-
+	// Si se requiere paginación con beforeMessageID, se obtiene la fecha e ID del mensaje ancla.
 	if beforeMessageID != "" {
-		// Obtener el timestamp y el ID del mensaje ancla para la paginación
 		var anchorDate time.Time
-		var anchorID string // Asumimos que el ID también se usa para desempatar si los timestamps son idénticos
-		// La consulta para el ancla debe ser precisa
-		row := chatDB.QueryRow("SELECT Date, Id FROM Message WHERE Id = ? AND ChatId = ?", beforeMessageID, chatID)
-		err := row.Scan(&anchorDate, &anchorID)
+		var anchorID string
+		err := chatDB.QueryRow(
+			"SELECT SentAt, Id FROM Message WHERE Id = ? AND ChatId = ?",
+			beforeMessageID, chatID,
+		).Scan(&anchorDate, &anchorID)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				logger.Warnf("SERVICE_CHAT", "beforeMessageID %s no encontrado para ChatID %s", beforeMessageID, chatID)
-				return []wsmodels.MessageDB{}, nil // No hay más mensajes antes de un ID inexistente
+				return []wsmodels.MessageDB{}, nil
 			}
 			logger.Errorf("SERVICE_CHAT", "Error obteniendo mensaje ancla %s: %v", beforeMessageID, err)
 			return nil, fmt.Errorf("error con paginación: %w", err)
 		}
-		// Para orden DESC (más nuevos primero), queremos mensajes "menores que" el ancla
-		// (Date < anchorDate) O (Date == anchorDate AND Id < anchorID)
-		// Si los IDs no son directamente comparables para orden, ajustar esta lógica.
-		// Asumiendo que los IDs son ULIDs o similar, donde una comparación lexicográfica es válida para la secuencia.
-		query += " AND (Date < ? OR (Date = ? AND Id < ?))"
+
+		// Se agrega la condición de paginación.
+		query += " AND (SentAt < ? OR (SentAt = ? AND Id < ?))"
 		args = append(args, anchorDate, anchorDate, anchorID)
 	}
 
-	query += " ORDER BY Date DESC, Id DESC LIMIT ?"
+	query += " ORDER BY SentAt DESC, Id DESC LIMIT ?"
 	args = append(args, limit)
 
 	rows, err := chatDB.Query(query, args...)
@@ -277,55 +307,50 @@ func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID stri
 
 	var messages []wsmodels.MessageDB
 	for rows.Next() {
-		var dbMsg models.Message // Usamos models.Message para el escaneo inicial
-		var typeMessageIdSc sql.NullInt64
-		var mediaIdSc sql.NullString
-		var textSc sql.NullString // Variable para escanear el campo Text
-		// ResponseTo y ChatIdGroup no están en el SELECT actual, añadir si es necesario.
+		var m wsmodels.MessageDB
+		var content, mediaId, replyToMessageId, chatIdGroup sql.NullString
+		var editedAt sql.NullTime
+		var sentAt time.Time
 
-		// Los campos a escanear deben coincidir con la consulta SELECT actual:
-		// Id, UserId, Text, Date, StatusMessage, TypeMessageId, MediaId
 		err := rows.Scan(
-			&dbMsg.Id,
-			&dbMsg.UserId, // FromUserId
-			&textSc,       // Text (puede ser NULL)
-			&dbMsg.Date,   // Se convertirá a Timestamp string
-			&dbMsg.StatusMessage,
-			&typeMessageIdSc, // TypeMessageId (puede ser NULL)
-			&mediaIdSc,       // MediaId (puede ser NULL)
+			&m.Id,
+			&m.SenderId,
+			&content,
+			&sentAt,
+			&m.Status,
+			&m.TypeMessageId,
+			&mediaId,
+			&replyToMessageId,
+			&editedAt,
+			&chatIdGroup,
 		)
 		if err != nil {
 			logger.Errorf("SERVICE_CHAT", "Error escaneando mensaje: %v", err)
 			continue
 		}
 
-		var targetUserID int64
-		if dbMsg.UserId == contact.User1Id {
-			targetUserID = contact.User2Id
-		} else if dbMsg.UserId == contact.User2Id { // Asegurar que User1Id y User2Id sean los correctos del contacto
-			targetUserID = contact.User1Id
-		} else {
-			logger.Warnf("SERVICE_CHAT", "El UserId %d del mensaje no coincide con ninguno de los participantes del ContactID %s", dbMsg.UserId, contact.ContactId)
-			// Decidir cómo manejar esto: ¿Omitir mensaje? ¿Establecer targetUserID a un valor por defecto o error?
-			// Por ahora, lo dejaremos como estaba, pero esto podría ser un problema si los datos son inconsistentes.
-			targetUserID = 0 // O alguna otra lógica de manejo de errores
+		// Asignar chatID a la estructura utilizando un puntero.
+		m.ChatId = new(string)
+		*m.ChatId = chatID
+
+		if content.Valid {
+			m.Content = &content.String
+		}
+		if mediaId.Valid {
+			m.MediaId = &mediaId.String
+		}
+		if replyToMessageId.Valid {
+			m.ReplyToMessageId = &replyToMessageId.String
+		}
+		if chatIdGroup.Valid {
+			m.ChatIdGroup = &chatIdGroup.String
 		}
 
-		m := wsmodels.MessageDB{
-			Id:           dbMsg.Id,
-			ChatId:       chatID,
-			FromUserId:   dbMsg.UserId,
-			TargetUserId: targetUserID,
-			Text:         textSc.String, // Usar textSc.String, será "" si Text era NULL
-			Timestamp:    dbMsg.Date.UTC().Format(time.RFC3339Nano),
-			Status:       MapStatusMessageToString(dbMsg.StatusMessage),
-		}
-
-		if typeMessageIdSc.Valid {
-			m.TypeMessageId = typeMessageIdSc.Int64
-		}
-		if mediaIdSc.Valid {
-			m.MediaId = mediaIdSc.String
+		// Formateo de los timestamps a ISO8601.
+		m.SentAt = sentAt.UTC().Format(time.RFC3339Nano)
+		if editedAt.Valid {
+			editedAtStr := editedAt.Time.UTC().Format(time.RFC3339Nano)
+			m.EditedAt = &editedAtStr
 		}
 
 		messages = append(messages, m)
@@ -336,12 +361,7 @@ func GetChatHistory(chatID string, userID int64, limit int, beforeMessageID stri
 		return nil, fmt.Errorf("error procesando resultados de mensajes: %w", err)
 	}
 
-	// Invertir el slice 'messages' para que el más antiguo de la página actual esté primero.
-	// for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-	// 	messages[i], messages[j] = messages[j], messages[i]
-	// }
-
-	logger.Successf("SERVICE_CHAT", "Historial para ChatID %s recuperado y ordenado (más antiguo primero en la página). %d mensajes.", chatID, len(messages))
+	logger.Successf("SERVICE_CHAT", "Historial para ChatID %s recuperado. %d mensajes.", chatID, len(messages))
 	return messages, nil
 }
 
@@ -362,22 +382,6 @@ func GetChatParticipants(chatID string) (int64, int64, error) {
 	}
 	// Asumiendo que la estructura de contact tiene User1Id y User2Id
 	return contact.User1Id, contact.User2Id, nil
-}
-
-// MapStatusMessageToString convierte el estado int de la BD a una cadena para el cliente.
-// Renombrada para ser exportada.
-func MapStatusMessageToString(statusInt int) string {
-	switch statusInt {
-	case 1: // Asumiendo 1 = Enviado
-		return "sent"
-	case 2: // Asumiendo 2 = Entregado (al dispositivo)
-		return "delivered_device"
-	case 3: // Asumiendo 3 = Leído
-		return "read"
-	default:
-		logger.Warnf("SERVICE_CHAT", "Estado de mensaje desconocido: %d", statusInt)
-		return "unknown"
-	}
 }
 
 // TODO: Implementar GetMessagesForChat, MarkMessagesAsRead, SetUserTypingStatus

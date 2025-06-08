@@ -220,24 +220,74 @@ FOREIGN KEY (UserId) REFERENCES User(Id),
 FOREIGN KEY (RoleId) REFERENCES Role(Id)
 );
 
+/*
+Tabla Message (versión robusta)
+Descripción: Almacena todos los mensajes, tanto en chats privados como en grupos.
+
+Mejoras sobre la versión original:
+- Id: Se mantiene como VARCHAR(255) para soportar UUIDs generados por el cliente. Se recomienda usar CHAR(36) si son UUIDs estándar para ahorrar espacio y mejorar rendimiento.
+- Semántica de nombres: Se han renombrado campos como `UserId` a `SenderId` y `ResponseTo` a `ReplyToMessageId` para mayor claridad.
+- Contenido del mensaje: `Text` se cambia a `Content` y su tipo a `TEXT` para permitir mensajes más largos.
+- Timestamps precisos: `Date` (que solo guardaba la fecha) se reemplaza por `SentAt` (DATETIME) para incluir la hora y se añade `EditedAt` para registrar ediciones.
+- Estado del mensaje: `StatusMessage` (INT) se convierte en un `ENUM` para que los valores sean auto-descriptivos ('sending', 'sent', 'delivered', 'read', 'failed').
+- Integridad de datos: Se añaden restricciones (CHECK constraints) para:
+    1. Asegurar que un mensaje pertenezca a un chat (`ChatId`) O a un grupo (`ChatIdGroup`), pero no a ambos.
+    2. Evitar mensajes vacíos (debe tener `Content` o `MediaId`).
+- Índices optimizados: Se mueven los índices aquí y se ajustan para consultas comunes.
+*/
 CREATE TABLE IF NOT EXISTS Message (
-Id VARCHAR(255) PRIMARY KEY,
-TypeMessageId BIGINT,
-Text VARCHAR(255),
-MediaId VARCHAR(255),
-Date DATE,
-StatusMessage INT,
-UserId BIGINT,
-ChatId VARCHAR(255),
-ChatIdGroup VARCHAR(255),
-ResponseTo VARCHAR(255),
-FOREIGN KEY (TypeMessageId) REFERENCES TypeMessage(Id),
-FOREIGN KEY (MediaId) REFERENCES Multimedia(Id),
-FOREIGN KEY (UserId) REFERENCES User(Id),
-FOREIGN KEY (ChatId) REFERENCES Contact(ChatId),
-FOREIGN KEY (ChatIdGroup) REFERENCES GroupsUsers(ChatId),
-FOREIGN KEY (ResponseTo) REFERENCES Message(Id)
+    Id VARCHAR(255) PRIMARY KEY,
+    -- El ChatId o ChatIdGroup no puede ser nulo, pero solo uno de ellos debe tener valor.
+    ChatId VARCHAR(255),
+    ChatIdGroup VARCHAR(255),
+
+    SenderId BIGINT NOT NULL,
+    TypeMessageId BIGINT NOT NULL,
+    
+    Content TEXT,
+    MediaId VARCHAR(255),
+    
+    -- Para mensajes que son una respuesta a otro.
+    ReplyToMessageId VARCHAR(255),
+
+    SentAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    EditedAt DATETIME, -- Se actualiza si el mensaje es editado.
+
+    Status ENUM('sending', 'sent', 'delivered', 'read', 'failed') NOT NULL DEFAULT 'sending',
+
+    FOREIGN KEY (SenderId) REFERENCES User(Id),
+    FOREIGN KEY (TypeMessageId) REFERENCES TypeMessage(Id),
+    FOREIGN KEY (MediaId) REFERENCES Multimedia(Id),
+    FOREIGN KEY (ChatId) REFERENCES Contact(ChatId),
+    FOREIGN KEY (ChatIdGroup) REFERENCES GroupsUsers(ChatId),
+    FOREIGN KEY (ReplyToMessageId) REFERENCES Message(Id),
+    
+    -- Un mensaje debe tener contenido de texto o un adjunto.
+    CONSTRAINT chk_message_content CHECK (Content IS NOT NULL OR MediaId IS NOT NULL),
+    
+    -- Un mensaje pertenece a un chat privado o a un grupo, no a ambos ni a ninguno.
+    CONSTRAINT chk_message_chat_or_group CHECK (
+        (ChatId IS NOT NULL AND ChatIdGroup IS NULL) OR 
+        (ChatId IS NULL AND ChatIdGroup IS NOT NULL)
+    )
 );
+
+-- Índices para la tabla Message
+-- Optimiza la búsqueda de mensajes dentro de un chat privado, ordenados por fecha.
+-- Es la consulta más común al abrir una conversación.
+CREATE INDEX idx_message_chat_sent ON Message(ChatId, SentAt DESC);
+
+-- Optimiza la búsqueda de mensajes dentro de un chat de grupo, ordenados por fecha.
+CREATE INDEX idx_message_group_sent ON Message(ChatIdGroup, SentAt DESC);
+
+-- Acelera la búsqueda de todos los mensajes enviados por un usuario.
+CREATE INDEX idx_message_sender ON Message(SenderId);
+
+-- Optimiza el conteo de mensajes no leídos para un usuario en un chat.
+-- Nota: para contar no leídos para un usuario específico, necesitarías incluir SenderId != current_user_id en tu query.
+CREATE INDEX idx_message_chat_status ON Message(ChatId, Status);
+
+CREATE INDEX idx_message_group_status ON Message(ChatIdGroup, Status);
 
 CREATE TABLE IF NOT EXISTS GroupMembers (
 UserId BIGINT,
@@ -407,10 +457,40 @@ CREATE INDEX idx_contact_user2_status ON Contact (User2Id, Status);
 CREATE INDEX idx_contact_chatid ON Contact (ChatId);
 
 
--- Optimiza la búsqueda del último mensaje para cada chat.
--- Cubre la partición por ChatId y el ordenamiento por fecha e ID.
-CREATE INDEX idx_message_chatid_date_id ON Message (ChatId, Date DESC, Id DESC);
+-- Se han movido y mejorado los índices de la tabla Message justo después de su definición.
 
--- Optimiza el conteo de mensajes no leídos para cada chat y usuario.
--- Cubre la agrupación y el filtro por estado del mensaje.
-CREATE INDEX idx_message_chatid_userid_status ON Message (ChatId, UserId, StatusMessage);
+
+-- Comandos ALTER para migrar la tabla Message existente a la nueva estructura.
+-- Ejecutar en orden.
+-- 1. Renombrar columnas y modificar tipos
+ALTER TABLE Message CHANGE COLUMN UserId SenderId BIGINT NOT NULL;
+ALTER TABLE Message CHANGE COLUMN Text Content TEXT;
+ALTER TABLE Message CHANGE COLUMN ResponseTo ReplyToMessageId VARCHAR(255);
+ALTER TABLE Message CHANGE COLUMN `Date` SentAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- 2. Añadir la nueva columna de estado y eliminar la antigua
+ALTER TABLE Message ADD COLUMN Status ENUM('sending', 'sent', 'delivered', 'read', 'failed') NOT NULL DEFAULT 'sending';
+-- Opcional: Migrar datos del antiguo StatusMessage (INT) al nuevo Status (ENUM)
+-- UPDATE Message SET Status = CASE StatusMessage WHEN 1 THEN 'sent' WHEN 2 THEN 'delivered' WHEN 3 THEN 'read' ELSE 'sent' END;
+ALTER TABLE Message DROP COLUMN StatusMessage;
+
+-- 3. Añadir la columna para la fecha de edición
+ALTER TABLE Message ADD COLUMN EditedAt DATETIME;
+
+-- 4. Añadir las restricciones de integridad
+ALTER TABLE Message ADD CONSTRAINT chk_message_content CHECK (Content IS NOT NULL OR MediaId IS NOT NULL);
+ALTER TABLE Message ADD CONSTRAINT chk_message_chat_or_group CHECK (
+    (ChatId IS NOT NULL AND ChatIdGroup IS NULL) OR
+    (ChatId IS NULL AND ChatIdGroup IS NOT NULL)
+);
+
+-- 5. Eliminar los índices antiguos (si existen)
+DROP INDEX IF EXISTS idx_message_chatid_date_id ON Message;
+DROP INDEX IF EXISTS idx_message_chatid_userid_status ON Message;
+
+-- 6. Crear los nuevos índices (ya deberían estar en la definición de la tabla nueva)
+-- CREATE INDEX idx_message_chat_sent ON Message(ChatId, SentAt DESC);
+-- CREATE INDEX idx_message_group_sent ON Message(ChatIdGroup, SentAt DESC);
+-- CREATE INDEX idx_message_sender ON Message(SenderId);
+-- CREATE INDEX idx_message_chat_status ON Message(ChatId, Status);
+-- CREATE INDEX idx_message_group_status ON Message(ChatIdGroup, Status);
