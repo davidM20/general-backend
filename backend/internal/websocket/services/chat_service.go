@@ -33,65 +33,45 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 	}
 	logger.Infof("SERVICE_CHAT", "Recuperando lista de chats para UserID: %d", userID)
 
-	contacts, err := queries.GetAcceptedContacts(userID)
+	// Usar la nueva consulta optimizada
+	results, err := queries.GetChatList(userID)
 	if err != nil {
-		logger.Errorf("SERVICE_CHAT", "Error obteniendo contactos para UserID %d: %v", userID, err)
-		return nil, fmt.Errorf("error obteniendo contactos: %w", err)
+		logger.Errorf("SERVICE_CHAT", "Error obteniendo la lista de chats optimizada para UserID %d: %v", userID, err)
+		return nil, fmt.Errorf("error obteniendo lista de chats: %w", err)
 	}
 
 	var chatList []wsmodels.ChatInfo
-	for _, contact := range contacts {
-		var otherUserID int64
-		if contact.User1Id == userID {
-			otherUserID = contact.User2Id
-		} else {
-			otherUserID = contact.User1Id
-		}
-
-		otherUserInfo, err := queries.GetUserBaseInfo(otherUserID)
-		if err != nil {
-			logger.Warnf("SERVICE_CHAT", "Error obteniendo info del usuario %d para la lista de chat de %d: %v", otherUserID, userID, err)
-			// Podríamos optar por continuar y mostrar el chat sin nombre/foto o saltarlo
-			continue // Por ahora, saltamos este chat si no podemos obtener info del otro usuario
-		}
-
-		lastMsg, err := queries.GetLastMessageBetweenUsers(userID, otherUserID)
-		if err != nil {
-			logger.Warnf("SERVICE_CHAT", "Error obteniendo último mensaje entre %d y %d: %v", userID, otherUserID, err)
-		}
-
-		var lastMessageText string
-		var lastMessageTs int64
-		var lastMessageFromUserId int64
-		if lastMsg != nil {
-			lastMessageText = lastMsg.Text
-			lastMessageTs = lastMsg.Date.UnixMilli()
-			lastMessageFromUserId = lastMsg.UserId
-		}
-
-		unreadCount, err := queries.GetUnreadMessageCount(userID, otherUserID) // Mensajes de otherUserID para userID
-		if err != nil {
-			logger.Warnf("SERVICE_CHAT", "Error obteniendo contador de no leídos para %d de %d: %v", userID, otherUserID, err)
-			// No es un error fatal
-		}
-
-		isOnline := manager.IsUserOnline(otherUserID)
+	for _, r := range results {
+		isOnline := manager.IsUserOnline(r.OtherUserID)
 
 		chatInfo := wsmodels.ChatInfo{
-			ChatID:         contact.ChatId, // Usar el ChatID del contacto
-			OtherUserID:    otherUserID,
-			OtherUserName:  otherUserInfo.UserName,
-			OtherFirstName: otherUserInfo.FirstName,
-			OtherLastName:  otherUserInfo.LastName,
-			OtherPicture:   otherUserInfo.Picture,
-			IsOtherOnline:  isOnline,
-			UnreadCount:    unreadCount,
+			ChatID:        r.ChatID,
+			OtherUserID:   r.OtherUserID,
+			OtherPicture:  r.OtherPicture.String,
+			IsOtherOnline: isOnline,
+			UnreadCount:   r.UnreadCount,
 		}
 
-		if lastMessageText != "" {
-			chatInfo.LastMessage = lastMessageText
-			chatInfo.LastMessageTs = lastMessageTs
-			chatInfo.LastMessageFromUserId = lastMessageFromUserId
+		if r.OtherUserRoleID == 3 {
+			// Para empresas, usar CompanyName. Si está vacío, usar UserName como fallback.
+			displayName := r.OtherCompanyName.String
+			if displayName == "" {
+				displayName = r.OtherUserName.String
+			}
+			chatInfo.OtherFirstName = displayName // Asignar a otherFirstName como solicitaste.
+			chatInfo.OtherUserName = displayName  // Asignar también a otherUserName para asegurar visibilidad.
+			chatInfo.OtherLastName = ""
+		} else {
+			// Para usuarios normales, usar su nombre y apellido.
+			chatInfo.OtherUserName = r.OtherUserName.String
+			chatInfo.OtherFirstName = r.OtherFirstName.String
+			chatInfo.OtherLastName = r.OtherLastName.String
+		}
+
+		if r.LastMessage.Valid {
+			chatInfo.LastMessage = r.LastMessage.String
+			chatInfo.LastMessageTs = r.LastMessageTs.Time.UnixMilli()
+			chatInfo.LastMessageFromUserId = r.LastMessageFromUserId.Int64
 		}
 
 		chatList = append(chatList, chatInfo)

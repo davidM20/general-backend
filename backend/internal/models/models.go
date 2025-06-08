@@ -125,6 +125,22 @@ type Contact struct {
 	ChatId    string `json:"chat_id" db:"ChatId"`
 }
 
+// ChatInfoQueryResult es una estructura para contener los resultados de la consulta de lista de chat optimizada.
+type ChatInfoQueryResult struct {
+	ChatID                string
+	OtherUserID           int64
+	OtherUserRoleID       int
+	OtherUserName         sql.NullString
+	OtherFirstName        sql.NullString
+	OtherLastName         sql.NullString
+	OtherCompanyName      sql.NullString
+	OtherPicture          sql.NullString
+	LastMessage           sql.NullString
+	LastMessageTs         sql.NullTime
+	LastMessageFromUserId sql.NullInt64
+	UnreadCount           int
+}
+
 // Session defines the structure for the Session table.
 type Session struct {
 	Id      int64  `json:"id" db:"Id"`

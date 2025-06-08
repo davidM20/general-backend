@@ -393,3 +393,24 @@ ALTER TABLE Project MODIFY Description TEXT;
 ALTER TABLE Education ADD COLUMN IsCurrentlyStudying BOOLEAN DEFAULT FALSE;
 ALTER TABLE WorkExperience ADD COLUMN IsCurrentJob BOOLEAN DEFAULT FALSE;
 ALTER TABLE Project ADD COLUMN IsOngoing BOOLEAN DEFAULT FALSE;
+
+
+
+
+-- Acelera la búsqueda de contactos por el primer usuario y su estado.
+CREATE INDEX idx_contact_user1_status ON Contact (User1Id, Status);
+
+-- Acelera la búsqueda de contactos por el segundo usuario y su estado.
+CREATE INDEX idx_contact_user2_status ON Contact (User2Id, Status);
+
+-- Acelera las uniones (JOINs) con los mensajes usando el ChatId.
+CREATE INDEX idx_contact_chatid ON Contact (ChatId);
+
+
+-- Optimiza la búsqueda del último mensaje para cada chat.
+-- Cubre la partición por ChatId y el ordenamiento por fecha e ID.
+CREATE INDEX idx_message_chatid_date_id ON Message (ChatId, Date DESC, Id DESC);
+
+-- Optimiza el conteo de mensajes no leídos para cada chat y usuario.
+-- Cubre la agrupación y el filtro por estado del mensaje.
+CREATE INDEX idx_message_chatid_userid_status ON Message (ChatId, UserId, StatusMessage);

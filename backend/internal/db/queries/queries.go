@@ -1190,3 +1190,89 @@ func CreateContact(user1ID, user2ID int64, chatID string) error {
 	logger.Successf("QUERY", "Contacto creado exitosamente entre %d y %d con estado 'pending'", user1ID, user2ID)
 	return nil
 }
+
+// GetChatList recupera la lista de información de chat para un usuario con una única consulta optimizada.
+func GetChatList(userID int64) ([]models.ChatInfoQueryResult, error) {
+	query := `
+WITH LastMessages AS (
+    SELECT
+        m.ChatId,
+        m.Text,
+        m.Date,
+        m.UserId,
+        m.Id,
+        ROW_NUMBER() OVER(PARTITION BY m.ChatId ORDER BY m.Date DESC, m.Id DESC) as rn
+    FROM Message m
+),
+UnreadCounts AS (
+    SELECT
+        m.ChatId,
+        m.UserId,
+        COUNT(*) as unread
+    FROM Message m
+    WHERE m.StatusMessage < 3 -- 3 is 'read'
+    GROUP BY m.ChatId, m.UserId
+)
+SELECT
+    c.ChatId,
+    CASE WHEN c.User1Id = ? THEN c.User2Id ELSE c.User1Id END AS OtherUserID,
+    u.RoleId AS OtherUserRoleID,
+    u.UserName,
+    CASE WHEN u.RoleId = 3 THEN u.CompanyName ELSE u.FirstName END AS OtherFirstName,
+    CASE WHEN u.RoleId = 3 THEN '' ELSE u.LastName END AS OtherLastName,
+    u.CompanyName AS OtherCompanyName,
+    u.Picture,
+    lm.Text AS LastMessage,
+    lm.Date AS LastMessageTs,
+    lm.UserId AS LastMessageFromUserId,
+    COALESCE(uc.unread, 0) as UnreadCount
+FROM
+    Contact c
+JOIN
+    User u ON u.Id = (CASE WHEN c.User1Id = ? THEN c.User2Id ELSE c.User1Id END)
+LEFT JOIN
+    LastMessages lm ON lm.ChatId = c.ChatId AND lm.rn = 1
+LEFT JOIN
+    UnreadCounts uc ON uc.ChatId = c.ChatId AND uc.UserId = u.Id
+WHERE
+    (c.User1Id = ? OR c.User2Id = ?) AND c.Status = 'accepted'
+ORDER BY
+    lm.Date DESC
+`
+
+	rows, err := DB.Query(query, userID, userID, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying chat list for userID %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	var results []models.ChatInfoQueryResult
+	for rows.Next() {
+		var r models.ChatInfoQueryResult
+		err := rows.Scan(
+			&r.ChatID,
+			&r.OtherUserID,
+			&r.OtherUserRoleID,
+			&r.OtherUserName,
+			&r.OtherFirstName,
+			&r.OtherLastName,
+			&r.OtherCompanyName,
+			&r.OtherPicture,
+			&r.LastMessage,
+			&r.LastMessageTs,
+			&r.LastMessageFromUserId,
+			&r.UnreadCount,
+		)
+		if err != nil {
+			logger.Errorf("QUERIES", "Error scanning chat list row: %v", err)
+			return nil, fmt.Errorf("error scanning chat list row: %w", err)
+		}
+		results = append(results, r)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error after iterating chat list rows: %w", err)
+	}
+
+	return results, nil
+}
