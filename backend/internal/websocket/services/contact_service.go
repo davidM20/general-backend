@@ -11,6 +11,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws/types"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
+	"github.com/google/uuid"
 )
 
 // AcceptFriendRequest procesa la aceptación de una solicitud de amistad.
@@ -45,11 +46,8 @@ func AcceptFriendRequest(userID int64, notificationId string, timestamp string, 
 		return fmt.Errorf("error actualizando estado del contacto: %w", err)
 	}
 
-	// Crear chat entre los usuarios
-	chatId, err := queries.CreateChat(userID, otherUserId)
-	if err != nil {
-		return fmt.Errorf("error creando chat: %w", err)
-	}
+	// Crear chat entre los usuarios con UUID
+	chatId := uuid.NewString()
 
 	// Actualizar el chatId en el contacto
 	err = queries.UpdateContactChatId(userID, otherUserId, chatId)
@@ -134,14 +132,11 @@ func RejectFriendRequest(userID int64, notificationId string, timestamp string, 
 func CreateContactRequest(senderID, recipientID int64, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
 	logger.Infof("SERVICE_CONTACT", "User %d iniciando contacto con user %d", senderID, recipientID)
 
-	// Crear chat entre los usuarios
-	chatID, err := queries.CreateChat(senderID, recipientID)
-	if err != nil {
-		return fmt.Errorf("error creando chat: %w", err)
-	}
+	// Crear chatID con UUID
+	chatID := uuid.NewString()
 
 	// Crear el contacto con estado 'pending'
-	err = queries.CreateContact(senderID, recipientID, chatID)
+	err := queries.CreateContact(senderID, recipientID, chatID, "pending")
 	if err != nil {
 		return fmt.Errorf("error creando contacto: %w", err)
 	}

@@ -84,8 +84,8 @@ type Role struct {
 // User defines the structure for the User table, handling potential NULL values.
 type User struct {
 	Id                 int64          `json:"id" db:"Id"`
-	FirstName          string         `json:"first_name" db:"FirstName"`
-	LastName           string         `json:"last_name" db:"LastName"`
+	FirstName          sql.NullString `json:"first_name" db:"FirstName"` // Handle NULL
+	LastName           sql.NullString `json:"last_name" db:"LastName"`   // Handle NULL
 	UserName           string         `json:"user_name" db:"UserName"`
 	Password           string         `json:"-" db:"Password"` // Exclude password from JSON responses
 	Email              string         `json:"email" db:"Email"`
@@ -258,14 +258,14 @@ type Enterprise struct {
 
 // --- Helper Structs ---
 
-// RegistrationStep1 defines the structure for the first step of user registration.
+// RegistrationStep1 defines the data for the first step of user registration.
 type RegistrationStep1 struct {
-	FirstName string `json:"primerNombre"`
-	LastName  string `json:"primerApellido"`
-	UserName  string `json:"UserName"`
-	Email     string `json:"Email"`
-	Phone     string `json:"Phone"`
-	Password  string `json:"Password"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	UserName  string `json:"userName"`
+	Email     string `json:"email"`
+	Phone     string `json:"phone"`
+	Password  string `json:"password"`
 }
 
 // RegistrationStep2 defines the structure for the second step of user registration.
@@ -278,6 +278,18 @@ type RegistrationStep2 struct {
 type RegistrationStep3 struct {
 	Sex       string    `json:"Sex"`
 	Birthdate time.Time `json:"Birthdate"`
+}
+
+// CompanyRegistrationRequest defines the data for company registration.
+type CompanyRegistrationRequest struct {
+	CompanyName string `json:"companyName"`
+	RIF         string `json:"rif"`
+	Sector      string `json:"sector"`
+	ContactName string `json:"contactName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	Password    string `json:"password"`
+	Location    string `json:"location"`
 }
 
 // LoginRequest defines the structure for login requests.
@@ -321,8 +333,6 @@ type UserDTO struct {
 func (u *User) ToUserDTO() UserDTO {
 	dto := UserDTO{
 		Id:                 u.Id,
-		FirstName:          u.FirstName,
-		LastName:           u.LastName,
 		UserName:           u.UserName,
 		Email:              u.Email,
 		RoleId:             u.RoleId,
@@ -330,6 +340,12 @@ func (u *User) ToUserDTO() UserDTO {
 	}
 
 	// Handle sql.Null* fields
+	if u.FirstName.Valid {
+		dto.FirstName = u.FirstName.String
+	}
+	if u.LastName.Valid {
+		dto.LastName = u.LastName.String
+	}
 	if u.Phone.Valid {
 		dto.Phone = u.Phone.String
 	}

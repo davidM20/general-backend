@@ -73,6 +73,7 @@ const (
 	RegisterStep1    = RegisterBasePath
 	RegisterStep2    = RegisterBasePath + "/step2"
 	RegisterStep3    = RegisterBasePath + "/step3"
+	RegisterCompany  = RegisterBasePath + "/company"
 
 	// Rutas de recuperación de contraseña
 	ResetPasswordPath     = "/reset-password"
@@ -227,6 +228,7 @@ func setupPublicAuthRoutes(router *mux.Router, authHandler *handlers.AuthHandler
 
 	// registro inicial
 	router.HandleFunc(RegisterBasePath, authHandler.Register).Methods(http.MethodPost)
+	router.HandleFunc(RegisterCompany, authHandler.RegisterCompany).Methods(http.MethodPost)
 
 	// Rutas de autenticación
 	router.HandleFunc(AuthPath, authHandler.Login).Methods(http.MethodPost)

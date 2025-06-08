@@ -19,6 +19,7 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/middleware"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/mail.v2"
 )
@@ -82,6 +83,42 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	// TODO: Generar un token de verificación/temporal y enviarlo (email?)
 	// Devolver el ID del usuario para los siguientes pasos (o el token temporal)
 	logger.Successf("REGISTER", "User %s completed step 1 registration with ID %d", req.Email, userID)
+
+	// Crear un chat consigo mismo para notas/borradores usando UUID
+	selfChatID := uuid.NewString()
+	if err := queries.CreateContact(userID, userID, selfChatID, "accepted"); err != nil {
+		// Loguear el error pero no interrumpir el registro
+		logger.Errorf("REGISTER", "Failed to create self-contact for user %d: %v", userID, err)
+	}
+
+	// Enviar notificación de bienvenida
+	welcomeNotif := models.Event{
+		EventType:   "WELCOME_MESSAGE",
+		EventTitle:  "¡Te damos la bienvenida!",
+		Description: "Gracias por registrarte. ¡Explora la plataforma y conecta con otros!",
+		UserId:      userID,
+		OtherUserId: sql.NullInt64{Valid: false},
+		ProyectId:   sql.NullInt64{Valid: false},
+		GroupId:     sql.NullInt64{Valid: false},
+	}
+	if _, err := queries.CreateNotification(welcomeNotif); err != nil {
+		logger.Errorf("REGISTER", "Failed to create welcome notification for user %d: %v", userID, err)
+	}
+
+	// Enviar notificación sobre el chat personal
+	draftChatNotif := models.Event{
+		EventType:   "SELF_CHAT_INFO",
+		EventTitle:  "Tu espacio personal para notas",
+		Description: "Hemos creado un chat contigo mismo. Puedes usarlo para guardar notas, enlaces o como borrador.",
+		UserId:      userID,
+		OtherUserId: sql.NullInt64{Valid: false},
+		ProyectId:   sql.NullInt64{Valid: false},
+		GroupId:     sql.NullInt64{Valid: false},
+	}
+	if _, err := queries.CreateNotification(draftChatNotif); err != nil {
+		logger.Errorf("REGISTER", "Failed to create self-chat notification for user %d: %v", userID, err)
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Step 1 complete", "userId": userID})
 }
@@ -165,6 +202,84 @@ func (h *AuthHandler) RegisterStep3(w http.ResponseWriter, r *http.Request) {
 	logger.Successf("REGISTER", "User ID %d completed full registration", userID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Registration complete"})
+}
+
+// RegisterCompany maneja el registro de una nueva empresa
+func (h *AuthHandler) RegisterCompany(w http.ResponseWriter, r *http.Request) {
+	var req models.CompanyRegistrationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validar los datos de entrada
+	if req.Email == "" || req.Password == "" || req.CompanyName == "" || req.RIF == "" {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	// Verificar si el email o RIF ya existen
+	exists, err := queries.CheckCompanyExists(req.Email, req.RIF)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		http.Error(w, "Email or RIF already exists", http.StatusConflict)
+		return
+	}
+
+	// Hashear la contraseña
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		logger.Errorf("REGISTER_COMPANY", "Error hashing password for %s: %v", req.Email, err)
+		http.Error(w, "Error processing registration", http.StatusInternalServerError)
+		return
+	}
+
+	// Rol para empresa es 3, estado pendiente de verificación es 2
+	companyRoleId := 3
+	defaultStatusId := 1 // 2 = Activo/Verificado, 1 = Pendiente de Verificación
+
+	userID, err := queries.RegisterNewCompany(h.DB, req, string(hashedPassword), companyRoleId, defaultStatusId)
+	if err != nil {
+		http.Error(w, "Failed to register company", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Successf("REGISTER_COMPANY", "Company %s completed registration with ID %d", req.CompanyName, userID)
+
+	// Crear un chat consigo mismo para notas/borradores usando UUID
+	selfChatID := uuid.NewString()
+	if err := queries.CreateContact(userID, userID, selfChatID, "accepted"); err != nil {
+		// Loguear el error pero no interrumpir el registro
+		logger.Errorf("REGISTER_COMPANY", "Failed to create self-contact for company %d: %v", userID, err)
+	}
+
+	// Enviar notificación de bienvenida
+	welcomeNotif := models.Event{
+		EventType:   "WELCOME_MESSAGE",
+		EventTitle:  fmt.Sprintf("¡Le damos la bienvenida a %s!", req.CompanyName),
+		Description: "Gracias por registrar su empresa. ¡Explore la plataforma y conecte con el talento que busca!",
+		UserId:      userID,
+	}
+	if _, err := queries.CreateNotification(welcomeNotif); err != nil {
+		logger.Errorf("REGISTER_COMPANY", "Failed to create welcome notification for company %d: %v", userID, err)
+	}
+
+	// Enviar notificación sobre el chat personal
+	draftChatNotif := models.Event{
+		EventType:   "SELF_CHAT_INFO",
+		EventTitle:  "Su espacio personal para notas",
+		Description: "Hemos creado un chat para su empresa. Puede usarlo para guardar notas, borradores o información importante.",
+		UserId:      userID,
+	}
+	if _, err := queries.CreateNotification(draftChatNotif); err != nil {
+		logger.Errorf("REGISTER_COMPANY", "Failed to create self-chat notification for company %d: %v", userID, err)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Company registration complete", "userId": userID})
 }
 
 // Login maneja el inicio de sesión del usuario

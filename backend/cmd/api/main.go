@@ -6,6 +6,7 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
 	"github.com/davidM20/micro-service-backend-go.git/internal/db"
+	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/routes"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/cloudclient"
 	"github.com/gorilla/mux"
@@ -44,6 +45,9 @@ func main() {
 	if err := db.InitializeDatabase(dbConn); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
+
+	// Inicializar el paquete de consultas con la conexión a la BD
+	queries.InitDB(dbConn)
 
 	// Configurar el router principal
 	mainRouter := mux.NewRouter()

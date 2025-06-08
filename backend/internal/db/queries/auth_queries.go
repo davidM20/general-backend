@@ -76,6 +76,26 @@ func CheckUserExists(db *sql.DB, email, username string) (bool, error) {
 	return exists, nil
 }
 
+// CheckCompanyExists verifica si ya existe una empresa con el mismo email o RIF
+func CheckCompanyExists(email, rif string) (bool, error) {
+	var exists bool
+	query := "SELECT EXISTS(SELECT 1 FROM User WHERE Email = ? OR RIF = ?)"
+
+	result, err := MeasureQueryWithResult(func() (interface{}, error) {
+		var e bool
+		err := DB.QueryRow(query, email, rif).Scan(&e)
+		return e, err
+	})
+
+	if err != nil {
+		logger.Errorf("AUTH_QUERIES", "Error checking company existence for %s: %v", email, err)
+		return false, err
+	}
+
+	exists = result.(bool)
+	return exists, nil
+}
+
 // RegisterNewUser registra un nuevo usuario en el sistema
 func RegisterNewUser(db *sql.DB, user models.RegistrationStep1, hashedPassword string, roleId, statusId int) (int64, error) {
 	query := `
@@ -106,6 +126,46 @@ func RegisterNewUser(db *sql.DB, user models.RegistrationStep1, hashedPassword s
 	userId, err := sqlResult.LastInsertId()
 	if err != nil {
 		logger.Errorf("AUTH_QUERIES", "Error getting last insert ID for %s: %v", user.Email, err)
+		return 0, err
+	}
+
+	return userId, nil
+}
+
+// RegisterNewCompany registra una nueva empresa en el sistema
+func RegisterNewCompany(db *sql.DB, req models.CompanyRegistrationRequest, hashedPassword string, roleId, statusId int) (int64, error) {
+	query := `
+        INSERT INTO User (CompanyName, RIF, Sector, FirstName, Email, Phone, Password, Location, RoleId, StatusAuthorizedId, UserName)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+
+	result, err := MeasureQueryWithResult(func() (interface{}, error) {
+		// Usando RIF como UserName ya que es unico
+		return db.Exec(
+			query,
+			req.CompanyName,
+			req.RIF,
+			req.Sector,
+			req.ContactName, // Mapped to FirstName
+			req.Email,
+			req.Phone,
+			hashedPassword,
+			req.Location,
+			roleId,
+			statusId,
+			req.RIF, // Using RIF as UserName
+		)
+	})
+
+	if err != nil {
+		logger.Errorf("AUTH_QUERIES", "Error inserting company %s: %v", req.CompanyName, err)
+		return 0, err
+	}
+
+	sqlResult := result.(sql.Result)
+	userId, err := sqlResult.LastInsertId()
+	if err != nil {
+		logger.Errorf("AUTH_QUERIES", "Error getting last insert ID for company %s: %v", req.CompanyName, err)
 		return 0, err
 	}
 

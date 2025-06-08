@@ -61,7 +61,7 @@ func (s *searchService) mapUserToSearchResult(user models.User) wsmodels.SearchR
 			item.Type = "graduate"
 		}
 		item.Data = wsmodels.UserSearchResultData{
-			Name:       user.FirstName + " " + user.LastName,
+			Name:       user.FirstName.String + " " + user.LastName.String,
 			Avatar:     user.Picture.String,
 			Career:     "", // Campo no disponible
 			University: "", // Campo no disponible

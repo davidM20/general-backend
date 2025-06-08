@@ -1108,37 +1108,6 @@ func UpdateContactChatId(userID, otherUserID int64, chatId string) error {
 	return nil
 }
 
-// CreateChat crea un nuevo chat entre dos usuarios y retorna su ID.
-func CreateChat(userID, otherUserID int64) (string, error) {
-	query := `
-		INSERT INTO Chat (Type, CreatedAt, UpdatedAt)
-		VALUES ('direct', ?, ?)
-		RETURNING ChatId`
-
-	now := time.Now()
-	var chatId string
-
-	err := DB.QueryRow(query, now, now).Scan(&chatId)
-	if err != nil {
-		return "", fmt.Errorf("error creando chat: %w", err)
-	}
-
-	// Agregar usuarios al chat
-	participantsQuery := `
-		INSERT INTO ChatParticipant (ChatId, UserId, CreatedAt, UpdatedAt)
-		VALUES (?, ?, ?, ?), (?, ?, ?, ?)`
-
-	_, err = DB.Exec(participantsQuery,
-		chatId, userID, now, now,
-		chatId, otherUserID, now, now)
-	if err != nil {
-		return "", fmt.Errorf("error agregando participantes al chat: %w", err)
-	}
-
-	logger.Infof("QUERY_CONTACT", "Chat creado entre usuarios %d y %d con ID %s", userID, otherUserID, chatId)
-	return chatId, nil
-}
-
 // GetNotificationById obtiene una notificación por su ID.
 func GetNotificationById(notificationId string) (*models.Notification, error) {
 	query := `
@@ -1180,14 +1149,14 @@ func GetNotificationById(notificationId string) (*models.Notification, error) {
 	return &notification, nil
 }
 
-func CreateContact(user1ID, user2ID int64, chatID string) error {
-	query := "INSERT INTO Contact (User1Id, User2Id, Status, ChatId) VALUES (?, ?, 'pending', ?)"
-	_, err := DB.Exec(query, user1ID, user2ID, chatID)
+func CreateContact(user1ID, user2ID int64, chatID string, status string) error {
+	query := "INSERT INTO Contact (User1Id, User2Id, Status, ChatId) VALUES (?, ?, ?, ?)"
+	_, err := DB.Exec(query, user1ID, user2ID, status, chatID)
 	if err != nil {
 		logger.Errorf("QUERY", "Error al crear contacto entre %d y %d: %v", user1ID, user2ID, err)
 		return fmt.Errorf("no se pudo crear el contacto: %w", err)
 	}
-	logger.Successf("QUERY", "Contacto creado exitosamente entre %d y %d con estado 'pending'", user1ID, user2ID)
+	logger.Successf("QUERY", "Contacto creado exitosamente entre %d y %d con estado '%s'", user1ID, user2ID, status)
 	return nil
 }
 
