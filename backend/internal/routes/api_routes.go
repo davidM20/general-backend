@@ -284,8 +284,13 @@ func setupAdminRoutes(router *mux.Router, adminHandler *handlers.AdminHandler, d
 	// Dashboard de administrador
 	adminRouter.HandleFunc("/dashboard", adminHandler.GetDashboard).Methods(http.MethodGet)
 
+	// Gestión de usuarios
+	adminRouter.HandleFunc("/users", adminHandler.ListUsers).Methods(http.MethodGet)
+
+	// Gestión de empresas
+	adminRouter.HandleFunc("/companies/unapproved", adminHandler.ListUnapprovedCompanies).Methods(http.MethodGet)
+
 	// TODO: Implementar los siguientes handlers y rutas
-	// adminRouter.HandleFunc("/users", adminHandler.ListUsers).Methods(http.MethodGet)
 	// adminRouter.HandleFunc("/users/{id}", adminHandler.ManageUser).Methods(http.MethodPut, http.MethodDelete)
 	// adminRouter.HandleFunc("/categories", adminHandler.ManageCategories).Methods(http.MethodPost, http.MethodPut)
 }

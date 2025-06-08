@@ -320,7 +320,9 @@ type UserDTO struct {
 	DegreeId           int64  `json:"degree_id,omitempty"`
 	UniversityId       int64  `json:"university_id,omitempty"`
 	RoleId             int    `json:"role_id"`
+	RoleName           string `json:"role_name,omitempty"`
 	StatusAuthorizedId int    `json:"status_authorized_id"`
+	StatusName         string `json:"status_name,omitempty"`
 	Summary            string `json:"summary,omitempty"`
 	Address            string `json:"address,omitempty"`
 	Github             string `json:"github,omitempty"`
@@ -531,4 +533,34 @@ type CompleteProfile struct {
 	Languages      []Languages      `json:"languages"`
 	Projects       []Project        `json:"projects"`
 	Degree         *Degree          `json:"degree,omitempty"`
+}
+
+// PaginatedUserResponse es la estructura para las respuestas de listas de usuarios paginadas.
+type PaginatedUserResponse struct {
+	CurrentPage  int       `json:"currentPage"`
+	PageSize     int       `json:"pageSize"`
+	TotalPages   int       `json:"totalPages"`
+	TotalRecords int       `json:"totalRecords"`
+	Users        []UserDTO `json:"users"`
+}
+
+// CompanyApprovalDTO define la estructura de datos para una empresa en la lista de aprobación.
+type CompanyApprovalDTO struct {
+	Id          int64  `json:"id"`
+	CompanyName string `json:"companyName"`
+	RIF         string `json:"rif"`
+	Email       string `json:"email"`
+	ContactName string `json:"contactName"` // Corresponde a FirstName en la tabla User
+	Phone       string `json:"phone"`
+	StatusName  string `json:"statusName"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// PaginatedCompanyApprovalResponse es la estructura para la lista paginada de empresas pendientes.
+type PaginatedCompanyApprovalResponse struct {
+	CurrentPage  int                  `json:"currentPage"`
+	PageSize     int                  `json:"pageSize"`
+	TotalPages   int                  `json:"totalPages"`
+	TotalRecords int                  `json:"totalRecords"`
+	Companies    []CompanyApprovalDTO `json:"companies"`
 }

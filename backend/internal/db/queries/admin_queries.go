@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -135,4 +136,134 @@ func GetMonthlyActivity() ([]models.MonthlyActivity, error) {
 	}
 
 	return results, nil
+}
+
+// CountTotalUsers cuenta el número total de usuarios registrados.
+func CountTotalUsers() (int, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM User"
+	err := DB.QueryRow(query).Scan(&count)
+	if err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error counting total users: %v", err)
+		return 0, fmt.Errorf("error counting total users: %w", err)
+	}
+	return count, nil
+}
+
+// GetUsersPaginated recupera una lista paginada de usuarios.
+// Devuelve una lista de usuarios y un error.
+func GetUsersPaginated(page, pageSize int) ([]models.UserDTO, error) {
+	offset := (page - 1) * pageSize
+	query := `
+		SELECT
+			u.Id, u.FirstName, u.LastName, u.UserName, u.Email, u.Phone,
+			u.Picture, u.RoleId, r.Name as RoleName, u.StatusAuthorizedId, s.Name as StatusName,
+			u.CreatedAt, u.UpdatedAt
+		FROM User u
+		LEFT JOIN Role r ON u.RoleId = r.Id
+		LEFT JOIN StatusAuthorized s ON u.StatusAuthorizedId = s.Id
+		ORDER BY u.Id ASC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := DB.Query(query, pageSize, offset)
+	if err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error querying paginated users: %v", err)
+		return nil, fmt.Errorf("error querying paginated users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []models.UserDTO
+	for rows.Next() {
+		var user models.UserDTO
+		var firstName, lastName, phone, picture, roleName, statusName sql.NullString
+
+		if err := rows.Scan(
+			&user.Id, &firstName, &lastName, &user.UserName, &user.Email, &phone,
+			&picture, &user.RoleId, &roleName, &user.StatusAuthorizedId, &statusName,
+			&user.CreatedAt, &user.UpdatedAt,
+		); err != nil {
+			logger.Errorf(adminQueriesLogComponent, "Error scanning user row: %v", err)
+			return nil, fmt.Errorf("error scanning user row: %w", err)
+		}
+
+		// Asignar valores desde tipos Null a string
+		user.FirstName = firstName.String
+		user.LastName = lastName.String
+		user.Phone = phone.String
+		user.Picture = picture.String
+		user.RoleName = roleName.String
+		user.StatusName = statusName.String
+
+		users = append(users, user)
+	}
+
+	if err = rows.Err(); err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error after iterating user rows: %v", err)
+		return nil, fmt.Errorf("error after iterating user rows: %w", err)
+	}
+
+	return users, nil
+}
+
+// CountUnapprovedCompanies cuenta el número total de empresas pendientes de aprobación.
+func CountUnapprovedCompanies() (int, error) {
+	var count int
+	// StatusAuthorizedId = 1 significa 'No Autorizado' o 'Pendiente'
+	query := "SELECT COUNT(*) FROM User WHERE RoleId = ? AND StatusAuthorizedId = 1"
+	err := DB.QueryRow(query, models.RoleBusiness).Scan(&count)
+	if err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error counting unapproved companies: %v", err)
+		return 0, fmt.Errorf("error counting unapproved companies: %w", err)
+	}
+	return count, nil
+}
+
+// GetUnapprovedCompaniesPaginated recupera una lista paginada de empresas pendientes de aprobación.
+func GetUnapprovedCompaniesPaginated(page, pageSize int) ([]models.CompanyApprovalDTO, error) {
+	offset := (page - 1) * pageSize
+	query := `
+		SELECT
+			u.Id, u.CompanyName, u.RIF, u.Email, u.FirstName, u.Phone, s.Name as StatusName, u.CreatedAt
+		FROM User u
+		LEFT JOIN StatusAuthorized s ON u.StatusAuthorizedId = s.Id
+		WHERE u.RoleId = ? AND u.StatusAuthorizedId = 1
+		ORDER BY u.CreatedAt ASC
+		LIMIT ? OFFSET ?
+	`
+	rows, err := DB.Query(query, models.RoleBusiness, pageSize, offset)
+	if err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error querying unapproved companies: %v", err)
+		return nil, fmt.Errorf("error querying unapproved companies: %w", err)
+	}
+	defer rows.Close()
+
+	var companies []models.CompanyApprovalDTO
+	for rows.Next() {
+		var company models.CompanyApprovalDTO
+		// Usamos sql.NullString para campos que podrían ser NULL en la BD aunque el DTO los espere como string
+		var companyName, rif, contactName, phone, statusName sql.NullString
+
+		if err := rows.Scan(
+			&company.Id, &companyName, &rif, &company.Email, &contactName, &phone, &statusName, &company.CreatedAt,
+		); err != nil {
+			logger.Errorf(adminQueriesLogComponent, "Error scanning unapproved company row: %v", err)
+			return nil, fmt.Errorf("error scanning unapproved company row: %w", err)
+		}
+
+		company.CompanyName = companyName.String
+		company.RIF = rif.String
+		company.ContactName = contactName.String
+		company.Phone = phone.String
+		company.StatusName = statusName.String
+
+		companies = append(companies, company)
+	}
+
+	if err = rows.Err(); err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error after iterating unapproved company rows: %v", err)
+		return nil, fmt.Errorf("error after iterating unapproved company rows: %w", err)
+	}
+
+	return companies, nil
 }
