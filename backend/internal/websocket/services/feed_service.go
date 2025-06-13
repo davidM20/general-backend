@@ -51,8 +51,8 @@ func (s *FeedService) GetFeedItems(userID int64) ([]wsmodels.FeedItem, error) {
 	logger.Infof("FEED_SERVICE", "Usuario %d solicitó items del feed.", userID)
 
 	// Definir límites para las consultas (pueden ser configurables)
-	userLimit := 10
-	eventLimit := 10
+	userLimit := 30
+	eventLimit := 30
 
 	var allFeedItems []wsmodels.FeedItem
 

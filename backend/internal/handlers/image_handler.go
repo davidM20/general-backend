@@ -85,6 +85,62 @@ func (h *ImageHandler) UploadImage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(uploadDetails)
 }
 
+// UpdateProfilePicture maneja la subida de una nueva foto de perfil para el usuario autenticado.
+func (h *ImageHandler) UpdateProfilePicture(w http.ResponseWriter, r *http.Request) {
+	// 1. Obtener userID del contexto
+	userID, ok := r.Context().Value(middleware.UserIDContextKey).(int64)
+	if !ok || userID == 0 {
+		logger.Warn("UpdateProfilePicture.Auth", "No se pudo obtener userID del contexto o es inválido.")
+		http.Error(w, `{"error": "Usuario no autenticado o ID de usuario inválido."}`, http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Parsear el formulario y obtener el archivo
+	if err := r.ParseMultipartForm(10 << 20); err != nil { // Límite de 10MB
+		logger.Errorf("UpdateProfilePicture.ParseForm", "Error parseando multipart form: %v", err)
+		http.Error(w, `{"error": "Solicitud inválida: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	file, handler, err := r.FormFile("image") // El campo se debe llamar "image"
+	if err != nil {
+		logger.Errorf("UpdateProfilePicture.FormFile", "Error obteniendo el archivo 'image' del formulario: %v", err)
+		http.Error(w, `{"error": "Error al recibir el archivo: `+err.Error()+`"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	logger.Infof("UpdateProfilePicture", "Recibida solicitud de actualización de foto de perfil del usuario %d, archivo: %s", userID, handler.Filename)
+
+	// 3. Procesar y subir la imagen usando el servicio
+	uploadDetails, err := h.imageService.ProcessAndUploadImage(r.Context(), userID, file, handler)
+	if err != nil {
+		logger.Errorf("UpdateProfilePicture.ServiceCallUpload", "Error procesando la imagen para el usuario %d: %v", userID, err)
+		http.Error(w, `{"error": "Error al procesar la imagen: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// 4. Actualizar la referencia en la tabla de usuarios
+	err = h.imageService.UpdateUserProfilePicture(r.Context(), userID, uploadDetails.FileName)
+	if err != nil {
+		logger.Errorf("UpdateProfilePicture.ServiceCallUpdate", "Error actualizando la foto de perfil en la BD para el usuario %d: %v", userID, err)
+		// Aunque la imagen se subió, el perfil no se actualizó. Se debe notificar el error.
+		http.Error(w, `{"error": "La imagen fue subida pero no se pudo actualizar el perfil. Por favor, contacte a soporte."}`, http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Responder con éxito
+	response := map[string]interface{}{
+		"message":   "Foto de perfil actualizada exitosamente.",
+		"fileName":  uploadDetails.FileName,
+		"url":       uploadDetails.URL,
+		"contentId": uploadDetails.ID,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
 // ViewImage maneja la solicitud GET para ver una imagen, autenticando con token en query param.
 func (h *ImageHandler) ViewImage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

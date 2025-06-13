@@ -40,6 +40,7 @@ type StudentFeedData struct {
 	University  string   `json:"university"`
 	Skills      []string `json:"skills"`
 	Description string   `json:"description"`
+	UserID      int64    `json:"userId"`
 }
 
 // CompanyFeedData contiene los datos específicos para un item del feed de tipo "company".
@@ -49,6 +50,7 @@ type CompanyFeedData struct {
 	Industry    string `json:"industry"`
 	Location    string `json:"location"`
 	Description string `json:"description"`
+	UserID      int64  `json:"userId"`
 }
 
 // EventFeedData contiene los datos específicos para un item del feed de tipo "event".

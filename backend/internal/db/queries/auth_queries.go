@@ -224,6 +224,23 @@ func UpdateUserStep3(db *sql.DB, userId int64, sex string, birthdate time.Time, 
 	return nil
 }
 
+// UpdateUserPicture actualiza la foto de perfil de un usuario.
+func UpdateUserPicture(userID int64, pictureFileName string) error {
+	query := "UPDATE User SET Picture = ? WHERE Id = ?"
+
+	err := MeasureQuery(func() error {
+		_, err := DB.Exec(query, pictureFileName, userID)
+		return err
+	})
+
+	if err != nil {
+		logger.Errorf("AUTH_QUERIES", "Error updating user picture for UserID %d: %v", userID, err)
+		return err
+	}
+
+	return nil
+}
+
 // GetUserByEmail obtiene la información de un usuario por su email
 func GetUserByEmail(db *sql.DB, email string) (models.User, string, error) {
 	var user models.User

@@ -203,6 +203,17 @@ func (s *ImageUploadService) ProcessAndUploadImage(ctx context.Context, userID i
 	}, nil
 }
 
+// UpdateUserProfilePicture actualiza el campo de la imagen de perfil en la base de datos.
+func (s *ImageUploadService) UpdateUserProfilePicture(ctx context.Context, userID int64, pictureFileName string) error {
+	err := queries.UpdateUserPicture(userID, pictureFileName)
+	if err != nil {
+		// El error ya se ha logueado en la capa de queries, aquí solo lo envolvemos para dar contexto de servicio.
+		return fmt.Errorf("servicio falló al actualizar la foto de perfil para el usuario %d: %w", userID, err)
+	}
+	logger.Infof("UpdateUserProfilePicture", "Foto de perfil actualizada exitosamente para el usuario %d con el archivo %s", userID, pictureFileName)
+	return nil
+}
+
 func (s *ImageUploadService) convertToWebP(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := webp.Encode(&buf, img, &webp.Options{Lossless: false, Quality: 80}); err != nil {

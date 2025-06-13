@@ -27,6 +27,7 @@ type ChatInfo struct {
 	LastMessageFromUserId int64  `json:"lastMessageFromUserId,omitempty"` // ID del usuario que envió el último mensaje
 	UnreadCount           int    `json:"unreadCount,omitempty"`           // Número de mensajes no leídos por el usuario actual en este chat
 	IsOtherOnline         bool   `json:"isOnline"`                        // Estado de conexión del otro usuario
+	Type                  string `json:"type,omitempty"`                  // Tipo de chat (contact, company, group)
 }
 
 // NotificationInfo representa una notificación para el usuario.

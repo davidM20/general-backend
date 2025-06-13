@@ -145,6 +145,7 @@ func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
 				University:  universityNameStr.String, // Usando el valor escaneado
 				Skills:      []string{},               // TODO: Obtener skills si es necesario
 				Description: summary.String,
+				UserID:      userID,
 			}
 			logger.Debugf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) procesado como ESTUDIANTE.", userID, userName.String)
 		} else if roleID.Valid && roleID.Int64 == int64(models.RoleBusiness) {
@@ -155,6 +156,7 @@ func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
 				Industry:    sector.String,
 				Location:    location.String,
 				Description: summary.String,
+				UserID:      userID,
 			}
 			logger.Debugf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) procesado como EMPRESA.", userID, userName.String)
 		} else {

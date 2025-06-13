@@ -43,12 +43,21 @@ func GetChatListForUser(userID int64, manager *customws.ConnectionManager[wsmode
 	for _, r := range results {
 		isOnline := manager.IsUserOnline(r.OtherUserID)
 
+		chatType := ""
+		if r.OtherUserRoleID == 3 {
+			chatType = "company"
+		} else if r.OtherUserRoleID == 2 {
+			chatType = "graduate" // egresado
+		} else {
+			chatType = "student"
+		}
 		chatInfo := wsmodels.ChatInfo{
 			ChatID:        r.ChatID,
 			OtherUserID:   r.OtherUserID,
 			OtherPicture:  r.OtherPicture.String,
 			IsOtherOnline: isOnline,
 			UnreadCount:   r.UnreadCount,
+			Type:          chatType,
 		}
 
 		if r.OtherUserRoleID == 3 {

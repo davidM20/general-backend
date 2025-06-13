@@ -1199,21 +1199,21 @@ func GetChatList(userID int64) ([]models.ChatInfoQueryResult, error) {
 WITH LastMessages AS (
     SELECT
         m.ChatId,
-        m.Text,
-        m.Date,
-        m.UserId,
+        m.Content,
+        m.SentAt,
+        m.SenderId,
         m.Id,
-        ROW_NUMBER() OVER(PARTITION BY m.ChatId ORDER BY m.Date DESC, m.Id DESC) as rn
+        ROW_NUMBER() OVER(PARTITION BY m.ChatId ORDER BY m.SentAt DESC, m.Id DESC) as rn
     FROM Message m
 ),
 UnreadCounts AS (
     SELECT
         m.ChatId,
-        m.UserId,
+        m.SenderId,
         COUNT(*) as unread
     FROM Message m
-    WHERE m.StatusMessage < 3 -- 3 is 'read'
-    GROUP BY m.ChatId, m.UserId
+    WHERE m.Status != 'read'
+    GROUP BY m.ChatId, m.SenderId
 )
 SELECT
     c.ChatId,
@@ -1224,9 +1224,9 @@ SELECT
     CASE WHEN u.RoleId = 3 THEN '' ELSE u.LastName END AS OtherLastName,
     u.CompanyName AS OtherCompanyName,
     u.Picture,
-    lm.Text AS LastMessage,
-    lm.Date AS LastMessageTs,
-    lm.UserId AS LastMessageFromUserId,
+    lm.Content AS LastMessage,
+    lm.SentAt AS LastMessageTs,
+    lm.SenderId AS LastMessageFromUserId,
     COALESCE(uc.unread, 0) as UnreadCount
 FROM
     Contact c
@@ -1235,11 +1235,11 @@ JOIN
 LEFT JOIN
     LastMessages lm ON lm.ChatId = c.ChatId AND lm.rn = 1
 LEFT JOIN
-    UnreadCounts uc ON uc.ChatId = c.ChatId AND uc.UserId = u.Id
+    UnreadCounts uc ON uc.ChatId = c.ChatId AND uc.SenderId = u.Id
 WHERE
     (c.User1Id = ? OR c.User2Id = ?) AND c.Status = 'accepted'
 ORDER BY
-    lm.Date DESC
+    lm.SentAt DESC
 `
 
 	rows, err := DB.Query(query, userID, userID, userID, userID)
