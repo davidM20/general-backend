@@ -6,39 +6,46 @@ import (
 	"time"
 )
 
-// CommunityEvent representa un evento comunitario que se muestra en el feed.
+// CommunityEvent representa la estructura de un evento en la base de datos.
 type CommunityEvent struct {
 	Id                   int64           `json:"id"`
 	Title                string          `json:"title"`
-	Description          sql.NullString  `json:"description"` // Puede ser nulo
+	Description          NullString      `json:"description"`
 	EventDate            time.Time       `json:"event_date"`
-	Location             sql.NullString  `json:"location"`               // Puede ser nulo
-	Capacity             sql.NullInt64   `json:"capacity"`               // Nuevo
-	Price                sql.NullFloat64 `json:"price"`                  // Nuevo
-	Tags                 []string        `json:"tags"`                   // Nuevo, se manejará como JSON en DB
-	OrganizerCompanyName sql.NullString  `json:"organizer_company_name"` // Puede ser nulo
-	OrganizerUserId      sql.NullInt64   `json:"organizer_user_id"`      // Puede ser nulo, FK a User(Id)
-	OrganizerLogoUrl     sql.NullString  `json:"organizer_logo_url"`     // Puede ser nulo
-	ImageUrl             sql.NullString  `json:"image_url"`              // Puede ser nulo
+	Location             NullString      `json:"location"`
+	Capacity             NullInt32       `json:"capacity"`
+	Price                NullFloat64     `json:"price"`
+	Tags                 json.RawMessage `json:"tags"`
+	OrganizerCompanyName NullString      `json:"organizer_company_name"`
+	OrganizerUserId      NullInt64       `json:"organizer_user_id"`
+	OrganizerLogoUrl     NullString      `json:"organizer_logo_url"`
+	ImageUrl             NullString      `json:"image_url"`
 	CreatedByUserId      int64           `json:"created_by_user_id"`
+	DmetaTitlePrimary    string          `json:"-"`
+	DmetaTitleSecondary  string          `json:"-"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
-// CommunityEventCreateRequest es el DTO para la creación de un CommunityEvent.
-// No incluimos Id, CreatedAt, UpdatedAt ya que son generados por la DB o el sistema.
-// CreatedByUserId se obtendrá del token del usuario autenticado.
+// CommunityEventCreateRequest representa los datos para crear un nuevo evento.
 type CommunityEventCreateRequest struct {
-	Title                string    `json:"title" validate:"required,min=3,max=255"`
-	Description          *string   `json:"description"`
-	EventDate            time.Time `json:"event_date" validate:"required"`
-	Location             *string   `json:"location"`
-	Capacity             *int64    `json:"capacity" validate:"omitempty,min=0"`         // Nuevo
-	Price                *float64  `json:"price" validate:"omitempty,min=0"`            // Nuevo
-	Tags                 []string  `json:"tags" validate:"omitempty,dive,min=1,max=50"` // Nuevo
-	OrganizerCompanyName *string   `json:"organizer_company_name"`
-	OrganizerUserId      *int64    `json:"organizer_user_id"` // Opcional
-	ImageUrl             *string   `json:"image_url"`
+	Title                string          `json:"title"`
+	Description          string          `json:"description"`
+	EventDate            string          `json:"event_date"`
+	Location             string          `json:"location"`
+	Capacity             *int            `json:"capacity"`
+	Price                *float64        `json:"price"`
+	Tags                 json.RawMessage `json:"tags"`
+	OrganizerCompanyName string          `json:"organizer_company_name"`
+	OrganizerUserId      *int64          `json:"organizer_user_id"`
+	OrganizerLogoUrl     string          `json:"organizer_logo_url"`
+	ImageUrl             string          `json:"image_url"`
+}
+
+// PaginatedCommunityEvents es la estructura para la respuesta paginada de eventos.
+type PaginatedCommunityEvents struct {
+	Data       []CommunityEvent  `json:"data"`
+	Pagination PaginationDetails `json:"pagination"`
 }
 
 // ToNullString convierte un puntero a string en sql.NullString.

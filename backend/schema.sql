@@ -46,8 +46,6 @@ Id BIGINT AUTO_INCREMENT PRIMARY KEY,
 DegreeName VARCHAR(255),
 Descriptions VARCHAR(255),
 Code VARCHAR(255),
-UniversityId BIGINT,
-FOREIGN KEY (UniversityId) REFERENCES University(Id)
 );
 
 CREATE TABLE IF NOT EXISTS Role (
@@ -93,8 +91,8 @@ DocId VARCHAR(255) UNIQUE,
 NationalityId INT,
 Birthdate DATE,
 Picture VARCHAR(255),
-DegreeId BIGINT,
-UniversityId BIGINT,
+DegreeId BIGINT, -- desusado
+UniversityId BIGINT, -- desusado
 RoleId INT,  -- el rol determina si es un estudiante o una empresa (1: estudiante, 2: egresado 3: empresa)
 StatusAuthorizedId INT,
 Summary TEXT,
@@ -107,6 +105,10 @@ CompanyName VARCHAR(255),
 Location VARCHAR(255),
 FoundationYear INT,
 EmployeeCount INT,
+dmeta_person_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_person_secondary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_company_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_company_secondary VARCHAR(24) NOT NULL DEFAULT '',
 CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 FOREIGN KEY (NationalityId) REFERENCES Nationality(Id),
@@ -139,6 +141,10 @@ CREATE INDEX idx_user_rif ON User(RIF);
 
 -- Índice para búsquedas por CompanyName
 CREATE INDEX idx_user_company_name ON User(CompanyName);
+
+-- Columnas para búsqueda fonética de nombres de personas y empresas
+CREATE INDEX idx_user_phonetic_person ON User(dmeta_person_primary, dmeta_person_secondary);
+CREATE INDEX idx_user_phonetic_company ON User(dmeta_company_primary, dmeta_company_secondary);
 
 
 
@@ -305,8 +311,15 @@ Campus VARCHAR(255),
 GraduationDate DATE,
 CountryId BIGINT,
 IsCurrentlyStudying BOOLEAN DEFAULT FALSE,
+dmeta_institution_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_institution_secondary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_degree_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_degree_secondary VARCHAR(24) NOT NULL DEFAULT '',
 FOREIGN KEY (PersonId) REFERENCES User(Id)
 );
+
+CREATE INDEX idx_education_phonetic_institution ON Education(dmeta_institution_primary, dmeta_institution_secondary);
+CREATE INDEX idx_education_phonetic_degree ON Education(dmeta_degree_primary, dmeta_degree_secondary);
 
 CREATE TABLE IF NOT EXISTS WorkExperience (
 Id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -318,8 +331,15 @@ EndDate DATE,
 Description TEXT,
 CountryId BIGINT,
 IsCurrentJob BOOLEAN DEFAULT FALSE,
+dmeta_company_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_company_secondary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_position_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_position_secondary VARCHAR(24) NOT NULL DEFAULT '',
 FOREIGN KEY (PersonId) REFERENCES User(Id)
 );
+
+CREATE INDEX idx_workexperience_phonetic_company ON WorkExperience(dmeta_company_primary, dmeta_company_secondary);
+CREATE INDEX idx_workexperience_phonetic_position ON WorkExperience(dmeta_position_primary, dmeta_position_secondary);
 
 CREATE TABLE IF NOT EXISTS Certifications (
 Id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -335,8 +355,12 @@ Id BIGINT AUTO_INCREMENT PRIMARY KEY,
 PersonId BIGINT,
 Skill VARCHAR(255),
 Level VARCHAR(255),
+dmeta_primary VARCHAR(12) NOT NULL DEFAULT '',
+dmeta_secondary VARCHAR(12) NOT NULL DEFAULT '',
 FOREIGN KEY (PersonId) REFERENCES User(Id)
 );
+
+CREATE INDEX idx_skill_phonetic ON Skills(dmeta_primary, dmeta_secondary);
 
 CREATE TABLE IF NOT EXISTS Languages (
 Id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -358,8 +382,12 @@ ProjectStatus VARCHAR(255),
 StartDate DATE,
 ExpectedEndDate DATE,
 IsOngoing BOOLEAN DEFAULT FALSE,
+dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
 FOREIGN KEY (PersonID) REFERENCES User(Id)
 );
+
+CREATE INDEX idx_project_phonetic_title ON Project(dmeta_title_primary, dmeta_title_secondary);
 
 -- Tabla de Notificaciones no de eventos
 CREATE TABLE IF NOT EXISTS Event (
@@ -377,6 +405,10 @@ Status VARCHAR(50) DEFAULT 'PENDING',
 ActionRequired BOOLEAN DEFAULT FALSE,
 ActionTakenAt DATETIME,
 Metadata JSON,
+dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
+CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 FOREIGN KEY (UserId) REFERENCES User(Id),
 FOREIGN KEY (OtherUserId) REFERENCES User(Id),
 FOREIGN KEY (ProyectId) REFERENCES Project(Id),
@@ -395,6 +427,12 @@ FOREIGN KEY (GroupId) REFERENCES GroupsUsers(Id)
    CREATE INDEX idx_event_project ON Event(ProyectId);
    CREATE INDEX idx_event_group ON Event(GroupId);
    CREATE INDEX idx_event_otheruserid ON Event(OtherUserId);
+
+   CREATE INDEX idx_community_event_date ON CommunityEvent(EventDate);
+   CREATE INDEX idx_community_event_created_at ON CommunityEvent(CreatedAt);
+   CREATE INDEX idx_community_event_organizer_user ON CommunityEvent(OrganizerUserId);
+   CREATE INDEX idx_community_event_created_by ON CommunityEvent(CreatedByUserId);
+   CREATE INDEX idx_community_event_phonetic_title ON CommunityEvent(dmeta_title_primary, dmeta_title_secondary);
 
 
 CREATE TABLE IF NOT EXISTS Notification (
@@ -419,6 +457,8 @@ CREATE TABLE IF NOT EXISTS CommunityEvent (
     OrganizerLogoUrl VARCHAR(255),              -- URL del logo del organizador
     ImageUrl VARCHAR(255),                      -- URL de la imagen principal del evento
     CreatedByUserId BIGINT NOT NULL,            -- Usuario de tu plataforma que publicó este evento
+    dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
+    dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (OrganizerUserId) REFERENCES User(Id) ON DELETE SET NULL,
@@ -430,6 +470,7 @@ CREATE INDEX idx_community_event_date ON CommunityEvent(EventDate);
 CREATE INDEX idx_community_event_created_at ON CommunityEvent(CreatedAt);
 CREATE INDEX idx_community_event_organizer_user ON CommunityEvent(OrganizerUserId);
 CREATE INDEX idx_community_event_created_by ON CommunityEvent(CreatedByUserId);
+CREATE INDEX idx_community_event_phonetic_title ON CommunityEvent(dmeta_title_primary, dmeta_title_secondary);
 
 -- Comandos ALTER TABLE para aplicar estos cambios a una tabla existente:
 ALTER TABLE CommunityEvent ADD COLUMN Capacity INT NULL;
@@ -494,3 +535,115 @@ DROP INDEX IF EXISTS idx_message_chatid_userid_status ON Message;
 -- CREATE INDEX idx_message_sender ON Message(SenderId);
 -- CREATE INDEX idx_message_chat_status ON Message(ChatId, Status);
 -- CREATE INDEX idx_message_group_status ON Message(ChatIdGroup, Status);
+
+
+
+/*
+Tabla ReputationReview
+Descripción: Almacena cada evento de reseña y calificación entre dos usuarios de la plataforma.
+Es el núcleo del sistema de reputación, registrando los Puntos de Reputación (RP) y
+el feedback cualitativo.
+
+Campos Principales:
+- IdEvaluador: El ID del usuario (persona o empresa) que realiza la calificación.
+- IdEvaluado: El ID del usuario (persona o empresa) que recibe la calificación y los puntos.
+- PuntosRP: La cantidad de puntos crudos otorgados, usados para el cálculo del nivel logarítmico.
+- Calificacion: La puntuación visible (ej. 4.5 estrellas).
+- TipoInteraccion: El contexto que originó la reseña (ej. una entrevista).
+
+Relaciones:
+- Se vincula dos veces con la tabla User a través de IdEvaluador y IdEvaluado.
+*/
+
+CREATE TABLE IF NOT EXISTS ReputationReview (
+    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    -- Clave foránea que referencia al usuario que EMITE la reseña.
+    -- Puede ser un estudiante, egresado o una empresa.
+    ReviewerId BIGINT NOT NULL,
+
+    -- Clave foránea que referencia al usuario que RECIBE la reseña y los puntos.
+    -- Puede ser un estudiante, egresado o una empresa.
+    RevieweeId BIGINT NOT NULL,
+
+    -- El valor numérico de "Puntos de Reputación" (RP) otorgados en esta interacción.
+    -- Este es el valor que se suma para el sistema de niveles logarítmico.
+    PointsRP INT NOT NULL,
+
+    -- La calificación visible por los usuarios (ej. una escala de 1 a 5).
+    Rating DECIMAL(2, 1),
+
+    -- El comentario o feedback cualitativo.
+    Comment TEXT,
+
+    -- Define el contexto de la reseña para dar más información.
+    InteractionType ENUM('ENTREVISTA', 'MENTORIA', 'PROYECTO_COLABORATIVO', 'EVENTO'),
+
+    -- Timestamps
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Definición de las llaves foráneas, vinculando esta tabla con la tabla User.
+    FOREIGN KEY (ReviewerId) REFERENCES User(Id),
+    FOREIGN KEY (RevieweeId) REFERENCES User(Id)
+);
+
+-- =================================================================
+-- MIGRACIÓN PARA BÚSQUEDA FONÉTICA (DOUBLE METAPHONE)
+-- =================================================================
+
+-- Añadir columnas fonéticas e índices a la tabla User
+ALTER TABLE User
+ADD COLUMN dmeta_person_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER EmployeeCount,
+ADD COLUMN dmeta_person_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_person_primary,
+ADD COLUMN dmeta_company_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_person_secondary,
+ADD COLUMN dmeta_company_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_company_primary;
+
+ALTER TABLE User
+ADD INDEX idx_user_phonetic_person (dmeta_person_primary, dmeta_person_secondary),
+ADD INDEX idx_user_phonetic_company (dmeta_company_primary, dmeta_company_secondary);
+
+-- Añadir columnas fonéticas e índices a la tabla Education
+ALTER TABLE Education
+ADD COLUMN dmeta_institution_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER IsCurrentlyStudying,
+ADD COLUMN dmeta_institution_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_institution_primary,
+ADD COLUMN dmeta_degree_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_institution_secondary,
+ADD COLUMN dmeta_degree_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_degree_primary;
+
+ALTER TABLE Education
+ADD INDEX idx_education_phonetic_institution (dmeta_institution_primary, dmeta_institution_secondary),
+ADD INDEX idx_education_phonetic_degree (dmeta_degree_primary, dmeta_degree_secondary);
+
+-- Añadir columnas fonéticas e índices a la tabla WorkExperience
+ALTER TABLE WorkExperience
+ADD COLUMN dmeta_company_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER IsCurrentJob,
+ADD COLUMN dmeta_company_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_company_primary,
+ADD COLUMN dmeta_position_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_company_secondary,
+ADD COLUMN dmeta_position_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_position_primary;
+
+ALTER TABLE WorkExperience
+ADD INDEX idx_workexperience_phonetic_company (dmeta_company_primary, dmeta_company_secondary),
+ADD INDEX idx_workexperience_phonetic_position (dmeta_position_primary, dmeta_position_secondary);
+
+-- Añadir columnas fonéticas e índices a la tabla Skills
+ALTER TABLE Skills
+ADD COLUMN dmeta_primary VARCHAR(12) NOT NULL DEFAULT '' AFTER Level,
+ADD COLUMN dmeta_secondary VARCHAR(12) NOT NULL DEFAULT '' AFTER dmeta_primary;
+
+ALTER TABLE Skills
+ADD INDEX idx_skill_phonetic (dmeta_primary, dmeta_secondary);
+
+-- Añadir columnas fonéticas e índices a la tabla Project
+ALTER TABLE Project
+ADD COLUMN dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER IsOngoing,
+ADD COLUMN dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_title_primary;
+
+ALTER TABLE Project
+ADD INDEX idx_project_phonetic_title (dmeta_title_primary, dmeta_title_secondary);
+
+-- Añadir columnas fonéticas e índices a la tabla CommunityEvent
+ALTER TABLE CommunityEvent
+ADD COLUMN dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '' AFTER CreatedByUserId,
+ADD COLUMN dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_title_primary;
+
+ALTER TABLE CommunityEvent
+ADD INDEX idx_community_event_phonetic_title (dmeta_title_primary, dmeta_title_secondary);

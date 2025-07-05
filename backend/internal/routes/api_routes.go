@@ -87,7 +87,8 @@ const (
 	ProfilePicturePath = UsersMePath + "/picture"
 
 	// Rutas de empresas
-	EnterprisesPath = "/enterprises"
+	EnterprisesPath   = "/enterprises"
+	EnterprisesMePath = EnterprisesPath + "/me"
 
 	// Rutas de categorías
 	CategoriesPath = "/categories"
@@ -113,6 +114,9 @@ const (
 	// Rutas de Eventos Comunitarios
 	CommunityEventsPath   = "/community-events"
 	MyCommunityEventsPath = CommunityEventsPath + "/my-events"
+
+	// Rutas de Búsqueda
+	SearchTalentPath = "/search/talent"
 
 	// Rutas de sistema
 	HealthPath = "/health"
@@ -156,6 +160,9 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupProtectedRoute(protected, UsersMePath, handlers.userHandler.GetMyProfile, http.MethodGet)
 	setupProtectedRoute(protected, ProfilePicturePath, handlers.imageHandler.UpdateProfilePicture, http.MethodPost)
 
+	// Rutas de empresas
+	setupProtectedRoute(protected, EnterprisesMePath, handlers.enterpriseHandler.UpdateEnterpriseProfile, http.MethodPut)
+
 	// Rutas de registro protegidas (pasos 2 y 3)
 	setupProtectedRoute(protected, RegisterStep2, handlers.authHandler.RegisterStep2, http.MethodPost)
 	setupProtectedRoute(protected, RegisterStep3, handlers.authHandler.RegisterStep3, http.MethodPost)
@@ -176,6 +183,9 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
 	setupProtectedRoute(protected, MyCommunityEventsPath, handlers.communityEventHandler.GetMyCommunityEvents, http.MethodGet)
 
+	// Rutas de Búsqueda
+	setupProtectedRoute(protected, SearchTalentPath, handlers.searchHandler.SearchTalent, http.MethodGet)
+
 	// Configurar rutas de administrador (requieren rol de administrador)
 	setupAdminRoutes(api, handlers.adminHandler, db, cfg)
 
@@ -194,6 +204,7 @@ type serviceHandlers struct {
 	audioHandler          *handlers.AudioHandler
 	pdfHandler            *handlers.PDFHandler
 	videoHandler          *handlers.VideoHandler
+	searchHandler         *handlers.SearchHandler
 	adminHandler          *handlers.AdminHandler
 }
 
@@ -204,6 +215,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 	audioUploadService := services.NewAudioUploadService(db, cfg)
 	pdfUploadService := services.NewPDFUploadService(db, cfg)
 	videoUploadService := services.NewVideoUploadService(db, cfg)
+	searchService := services.NewSearchService(db)
 
 	return serviceHandlers{
 		authHandler:           handlers.NewAuthHandler(db, cfg),
@@ -217,6 +229,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		audioHandler:          handlers.NewAudioHandler(audioUploadService, cfg),
 		pdfHandler:            handlers.NewPDFHandler(pdfUploadService, cfg),
 		videoHandler:          handlers.NewVideoHandler(videoUploadService, db, cfg),
+		searchHandler:         handlers.NewSearchHandler(searchService),
 		adminHandler:          handlers.NewAdminHandler(db, cfg),
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/auth"
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
@@ -103,6 +104,41 @@ func (h *EnterpriseHandler) RegisterEnterprise(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(response)
+}
+
+// UpdateEnterpriseProfile maneja la actualización del perfil de la empresa autenticada.
+func (h *EnterpriseHandler) UpdateEnterpriseProfile(w http.ResponseWriter, r *http.Request) {
+	// 1. Obtener el ID de usuario del token JWT
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		http.Error(w, "Authentication error: missing claims", http.StatusUnauthorized)
+		return
+	}
+	userID := claims.UserID
+
+	// 2. Verificar que el rol es de empresa (opcional pero recomendado si hay lógica específica)
+	// Aquí asumimos que el middleware ya podría haberlo verificado o que la ruta es solo para empresas.
+
+	// 3. Decodificar el cuerpo de la petición
+	var req models.EnterpriseProfileUpdate
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Errorf("ENTERPRISE_UPDATE", "Error decoding request for user %d: %v", userID, err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// 4. Llamar a la función de la base de datos para actualizar el perfil
+	err := queries.UpdateEnterpriseProfile(h.DB, userID, &req)
+	if err != nil {
+		logger.Errorf("ENTERPRISE_UPDATE", "Error updating profile for user %d: %v", userID, err)
+		http.Error(w, "Failed to update enterprise profile", http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Enviar respuesta de éxito
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Profile updated successfully"})
 }
 
 // TODO: Implementar GetEnterprises (Listar/Buscar, podría ser WS)

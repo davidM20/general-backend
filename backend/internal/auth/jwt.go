@@ -13,6 +13,9 @@ type ContextKey string
 // UserIDKey es la clave para almacenar el UserID en el contexto
 const UserIDKey ContextKey = "userID"
 
+// ClaimsKey es la clave para almacenar el objeto de claims completo en el contexto.
+const ClaimsKey ContextKey = "claims"
+
 // Claims define la estructura de los claims del JWT
 type Claims struct {
 	UserID int64 `json:"userId"`

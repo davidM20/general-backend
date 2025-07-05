@@ -9,6 +9,7 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
 // UpdateUserProfile actualiza dinámicamente los campos del perfil de un usuario.
@@ -241,6 +242,36 @@ func GetUserProfile(userID int64) (*models.UserProfile, error) {
 	}
 
 	return result.(*models.UserProfile), nil
+}
+
+// GetUserProfileByID recupera un perfil de búsqueda simplificado para un usuario.
+func GetUserProfileByID(db *sql.DB, userID int64) (*models.SearchResultProfile, error) {
+	query := `
+        SELECT
+            u.Id, u.FirstName, u.LastName, u.Picture, u.Summary, u.Location, u.RoleId,
+            (SELECT SUM(rr.PointsRP) FROM ReputationReview rr WHERE rr.RevieweeId = u.Id) AS TotalReputation,
+            (SELECT AVG(rr.Rating) FROM ReputationReview rr WHERE rr.RevieweeId = u.Id) AS AverageRating,
+            (SELECT e.Degree FROM Education e WHERE e.PersonId = u.Id ORDER BY e.GraduationDate DESC LIMIT 1) AS Career,
+            (SELECT SUM(DATEDIFF(IF(we.IsCurrentJob, CURDATE(), we.EndDate), we.StartDate)) / 365.25 FROM WorkExperience we WHERE we.PersonId = u.Id) AS YearsOfExperience
+        FROM User u
+        WHERE u.Id = ?
+    `
+	profile := &models.SearchResultProfile{}
+	err := db.QueryRow(query, userID).Scan(
+		&profile.ID, &profile.FirstName, &profile.LastName, &profile.Picture,
+		&profile.Summary, &profile.Location, &profile.RoleId, &profile.TotalReputation, &profile.AverageRating,
+		&profile.Career, &profile.YearsOfExperience,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("usuario con ID %d no encontrado para el perfil de búsqueda", userID)
+		}
+		logger.Errorf("QUERIES", "Error escaneando SearchResultProfile para el usuario %d: %v", userID, err)
+		return nil, err
+	}
+
+	return profile, nil
 }
 
 // GetEducationForUser recupera la lista de educación de un usuario.

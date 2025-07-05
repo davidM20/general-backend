@@ -2,6 +2,7 @@ package queries
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
@@ -96,40 +97,40 @@ func CheckCompanyExists(email, rif string) (bool, error) {
 	return exists, nil
 }
 
-// RegisterNewUser registra un nuevo usuario en el sistema
-func RegisterNewUser(db *sql.DB, user models.RegistrationStep1, hashedPassword string, roleId, statusId int) (int64, error) {
+// RegisterNewUser inserta un nuevo usuario en la base de datos con los datos del primer paso de registro.
+// Devuelve el ID del usuario recién creado.
+func RegisterNewUser(db *sql.DB, user models.RegistrationStep1, hashedPassword string, roleId, statusId int, pKey, sKey string) (int64, error) {
 	query := `
-        INSERT INTO User (FirstName, LastName, UserName, Password, Email, Phone, RoleId, StatusAuthorizedId)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `
+        INSERT INTO User (
+            FirstName, LastName, UserName, Password, Email, RoleId, StatusAuthorizedId,
+            dmeta_person_primary, dmeta_person_secondary
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	result, err := MeasureQueryWithResult(func() (interface{}, error) {
-		return db.Exec(
-			query,
-			user.FirstName,
-			user.LastName,
-			user.UserName,
-			hashedPassword,
-			user.Email,
-			user.Phone,
-			roleId,
-			statusId,
-		)
-	})
-
+	result, err := db.Exec(
+		query,
+		user.FirstName,
+		user.LastName,
+		user.UserName,
+		hashedPassword,
+		user.Email,
+		roleId,
+		statusId,
+		pKey,
+		sKey,
+	)
 	if err != nil {
-		logger.Errorf("AUTH_QUERIES", "Error inserting user %s: %v", user.Email, err)
-		return 0, err
+		logger.Errorf("QUERIES", "Error al insertar nuevo usuario %s: %v", user.Email, err)
+		return 0, fmt.Errorf("no se pudo registrar el usuario")
 	}
 
-	sqlResult := result.(sql.Result)
-	userId, err := sqlResult.LastInsertId()
+	id, err := result.LastInsertId()
 	if err != nil {
-		logger.Errorf("AUTH_QUERIES", "Error getting last insert ID for %s: %v", user.Email, err)
-		return 0, err
+		logger.Errorf("QUERIES", "Error al obtener LastInsertId para el usuario %s: %v", user.Email, err)
+		return 0, fmt.Errorf("no se pudo obtener el ID del usuario registrado")
 	}
 
-	return userId, nil
+	logger.Successf("QUERIES", "Usuario '%s' registrado con éxito con ID: %d", user.Email, id)
+	return id, nil
 }
 
 // RegisterNewCompany registra una nueva empresa en el sistema

@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 
@@ -125,15 +126,94 @@ func RegisterEnterprise(db *sql.DB, enterprise *models.EnterpriseRegistration) (
 	return userId, nil
 }
 
+// UpdateEnterpriseProfile actualiza los campos de una empresa en la tabla User.
+// La consulta se construye dinámicamente para actualizar solo los campos proporcionados.
+func UpdateEnterpriseProfile(db *sql.DB, userID int64, data *models.EnterpriseProfileUpdate) error {
+	var query bytes.Buffer
+	query.WriteString("UPDATE User SET ")
+
+	args := make([]interface{}, 0)
+	fieldCount := 0
+
+	// Función auxiliar para añadir campos a la consulta
+	addField := func(fieldName string, value interface{}) {
+		if fieldCount > 0 {
+			query.WriteString(", ")
+		}
+		query.WriteString(fmt.Sprintf("%s = ?", fieldName))
+		args = append(args, value)
+		fieldCount++
+	}
+
+	if data.CompanyName != nil {
+		addField("CompanyName", *data.CompanyName)
+	}
+	if data.ContactEmail != nil {
+		addField("ContactEmail", *data.ContactEmail)
+	}
+	if data.Twitter != nil {
+		addField("Twitter", *data.Twitter)
+	}
+	if data.Facebook != nil {
+		addField("Facebook", *data.Facebook)
+	}
+	if data.Phone != nil {
+		addField("Phone", *data.Phone)
+	}
+	if data.Picture != nil {
+		addField("Picture", *data.Picture)
+	}
+	if data.Summary != nil {
+		addField("Summary", *data.Summary)
+	}
+	if data.Address != nil {
+		addField("Address", *data.Address)
+	}
+	if data.Github != nil {
+		addField("Github", *data.Github)
+	}
+	if data.Linkedin != nil {
+		addField("Linkedin", *data.Linkedin)
+	}
+	if data.Sector != nil {
+		addField("Sector", *data.Sector)
+	}
+	if data.Location != nil {
+		addField("Location", *data.Location)
+	}
+	if data.FoundationYear != nil {
+		addField("FoundationYear", *data.FoundationYear)
+	}
+	if data.EmployeeCount != nil {
+		addField("EmployeeCount", *data.EmployeeCount)
+	}
+
+	// Si no se proporcionó ningún campo para actualizar, no hacemos nada.
+	if fieldCount == 0 {
+		return nil // O un error específico si se prefiere
+	}
+
+	query.WriteString(" WHERE Id = ?")
+	args = append(args, userID)
+
+	stmt, err := db.Prepare(query.String())
+	if err != nil {
+		return fmt.Errorf("error preparing update statement: %w", err)
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(args...)
+	if err != nil {
+		return fmt.Errorf("error executing update for user %d: %w", userID, err)
+	}
+
+	return nil
+}
+
 // Funciones para futura implementación:
 
 // GetEnterpriseById obtiene los datos de una empresa por su ID
 // func GetEnterpriseById(db *sql.DB, id int64) (*models.Enterprise, error) {
-//    // Implementación futura
-// }
-
-// UpdateEnterpriseProfile actualiza el perfil de una empresa
-// func UpdateEnterpriseProfile(db *sql.DB, enterprise *models.Enterprise) error {
 //    // Implementación futura
 // }
 

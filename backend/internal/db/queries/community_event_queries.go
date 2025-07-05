@@ -2,6 +2,9 @@ package queries
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
@@ -68,18 +71,32 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 	now := time.Now()
 
 	// Convertir punteros y slices a tipos SQL adecuados
-	description := models.ToNullString(eventData.Description)
-	location := models.ToNullString(eventData.Location)
-	capacity := models.ToNullInt64(eventData.Capacity)
+	description := models.ToNullString(&eventData.Description)
+	location := models.ToNullString(&eventData.Location)
+
+	var capacity sql.NullInt32
+	if eventData.Capacity != nil {
+		capacity.Valid = true
+		capacity.Int32 = int32(*eventData.Capacity)
+	}
+
 	price := models.ToNullFloat64(eventData.Price)
-	tagsJSON, err := models.TagsToJSON(eventData.Tags)
+
+	var tags []string
+	if len(eventData.Tags) > 0 && string(eventData.Tags) != "null" {
+		if err := json.Unmarshal(eventData.Tags, &tags); err != nil {
+			logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error unmarshalling tags to JSON for event '%s': %v", eventData.Title, err)
+			return 0, err
+		}
+	}
+	tagsJSON, err := models.TagsToJSON(tags)
 	if err != nil {
 		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error marshalling tags to JSON for event '%s': %v", eventData.Title, err)
 		return 0, err
 	}
-	organizerCompanyName := models.ToNullString(eventData.OrganizerCompanyName)
+	organizerCompanyName := models.ToNullString(&eventData.OrganizerCompanyName)
 	organizerUserID := models.ToNullInt64(eventData.OrganizerUserId)
-	imageURL := models.ToNullString(eventData.ImageUrl)
+	imageURL := models.ToNullString(&eventData.ImageUrl)
 
 	result, err := MeasureQueryWithResult(func() (interface{}, error) {
 		return db.Exec(
@@ -178,12 +195,7 @@ func GetCommunityEventsByUserIDPaginated(db *sql.DB, userID int64, limit, offset
 
 		// Deserializar las etiquetas si no son nulas
 		if tagsJSON.Valid {
-			event.Tags, err = models.TagsFromJSON(tagsJSON)
-			if err != nil {
-				logger.Warnf("COMMUNITY_EVENT_QUERIES", "Could not unmarshal tags for event ID %d: %v", event.Id, err)
-				// No devolver un error, simplemente dejar las etiquetas como nil y continuar
-				event.Tags = nil
-			}
+			event.Tags = json.RawMessage(tagsJSON.String)
 		}
 
 		events = append(events, event)
@@ -195,4 +207,167 @@ func GetCommunityEventsByUserIDPaginated(db *sql.DB, userID int64, limit, offset
 	}
 
 	return events, total, nil
+}
+
+// CreateCommunityEvent inserta un nuevo evento comunitario en la base de datos,
+// incluyendo sus claves fonéticas, y devuelve el ID del nuevo registro.
+func CreateCommunityEvent(db *sql.DB, req models.CommunityEventCreateRequest, createdByUserID int64, pKey, sKey string) (int64, error) {
+	query := `
+        INSERT INTO CommunityEvent (
+            Title, Description, EventDate, Location, Capacity, Price, Tags,
+            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, CreatedByUserID,
+            dmeta_title_primary, dmeta_title_secondary, CreatedAt, UpdatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	eventDate, err := time.Parse(time.RFC3339, req.EventDate)
+	if err != nil {
+		return 0, fmt.Errorf("formato de fecha de evento inválido: %w", err)
+	}
+
+	description := models.ToNullString(&req.Description)
+	location := models.ToNullString(&req.Location)
+
+	var capacity sql.NullInt32
+	if req.Capacity != nil {
+		capacity.Valid = true
+		capacity.Int32 = int32(*req.Capacity)
+	}
+
+	price := models.ToNullFloat64(req.Price)
+
+	var tags []string
+	if len(req.Tags) > 0 && string(req.Tags) != "null" {
+		if err := json.Unmarshal(req.Tags, &tags); err != nil {
+			logger.Errorf("QUERIES", "Error al desglosar etiquetas JSON para el evento '%s': %v", req.Title, err)
+			return 0, err
+		}
+	}
+	tagsJSON, err := models.TagsToJSON(tags)
+	if err != nil {
+		logger.Errorf("QUERIES", "Error al convertir etiquetas a JSON para el evento '%s': %v", req.Title, err)
+		return 0, err
+	}
+
+	organizerCompanyName := models.ToNullString(&req.OrganizerCompanyName)
+	organizerUserID := models.ToNullInt64(req.OrganizerUserId)
+	organizerLogoUrl := models.ToNullString(&req.OrganizerLogoUrl)
+	imageUrl := models.ToNullString(&req.ImageUrl)
+	now := time.Now()
+
+	result, err := db.Exec(query,
+		req.Title, description, eventDate, location, capacity, price, tagsJSON,
+		organizerCompanyName, organizerUserID, organizerLogoUrl, imageUrl, createdByUserID,
+		pKey, sKey, now, now,
+	)
+	if err != nil {
+		logger.Errorf("QUERIES", "Error al insertar un nuevo evento comunitario: %v", err)
+		return 0, fmt.Errorf("no se pudo crear el evento en la base de datos: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		logger.Errorf("QUERIES", "Error al obtener el LastInsertId para el nuevo evento: %v", err)
+		return 0, fmt.Errorf("no se pudo obtener el ID del nuevo evento: %w", err)
+	}
+
+	logger.Successf("QUERIES", "Evento comunitario creado con éxito con ID: %d", id)
+	return id, nil
+}
+
+// GetCommunityEventByID recupera un único evento comunitario por su ID.
+func GetCommunityEventByID(db *sql.DB, eventID int64) (*models.CommunityEvent, error) {
+	query := `
+        SELECT
+            Id, Title, Description, EventDate, Location, Capacity, Price, Tags,
+            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, CreatedByUserId,
+            CreatedAt, UpdatedAt
+        FROM CommunityEvent WHERE Id = ?`
+
+	var event models.CommunityEvent
+	var tagsJSON sql.NullString
+	err := db.QueryRow(query, eventID).Scan(
+		&event.Id, &event.Title, &event.Description, &event.EventDate, &event.Location,
+		&event.Capacity, &event.Price, &tagsJSON, &event.OrganizerCompanyName,
+		&event.OrganizerUserId, &event.OrganizerLogoUrl, &event.ImageUrl, &event.CreatedByUserId,
+		&event.CreatedAt, &event.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("evento con ID %d no encontrado", eventID)
+		}
+		logger.Errorf("QUERIES", "Error al escanear el evento con ID %d: %v", eventID, err)
+		return nil, err
+	}
+
+	if tagsJSON.Valid {
+		event.Tags = json.RawMessage(tagsJSON.String)
+	}
+
+	return &event, nil
+}
+
+// GetMyCommunityEvents recupera una lista paginada de eventos creados por un usuario específico.
+func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models.PaginatedCommunityEvents, error) {
+	var totalEvents int
+	countQuery := "SELECT COUNT(*) FROM CommunityEvent WHERE CreatedByUserId = ?"
+	err := db.QueryRow(countQuery, userID).Scan(&totalEvents)
+	if err != nil {
+		logger.Errorf("QUERIES", "Error al contar los eventos para el usuario %d: %v", userID, err)
+		return nil, err
+	}
+
+	if totalEvents == 0 {
+		return &models.PaginatedCommunityEvents{
+			Data:       []models.CommunityEvent{},
+			Pagination: models.PaginationDetails{TotalItems: 0, TotalPages: 0, CurrentPage: page, PageSize: pageSize},
+		}, nil
+	}
+
+	offset := (page - 1) * pageSize
+	query := `
+        SELECT
+            Id, Title, Description, EventDate, Location, Capacity, Price, Tags,
+            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, CreatedByUserId,
+            CreatedAt, UpdatedAt
+        FROM CommunityEvent
+        WHERE CreatedByUserId = ?
+        ORDER BY EventDate DESC
+        LIMIT ? OFFSET ?`
+
+	rows, err := db.Query(query, userID, pageSize, offset)
+	if err != nil {
+		logger.Errorf("QUERIES", "Error al obtener la lista de eventos para el usuario %d: %v", userID, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []models.CommunityEvent
+	for rows.Next() {
+		var event models.CommunityEvent
+		var tagsJSON sql.NullString
+		if err := rows.Scan(
+			&event.Id, &event.Title, &event.Description, &event.EventDate, &event.Location,
+			&event.Capacity, &event.Price, &tagsJSON, &event.OrganizerCompanyName,
+			&event.OrganizerUserId, &event.OrganizerLogoUrl, &event.ImageUrl, &event.CreatedByUserId,
+			&event.CreatedAt, &event.UpdatedAt,
+		); err != nil {
+			logger.Errorf("QUERIES", "Error al escanear la fila del evento: %v", err)
+			continue
+		}
+		if tagsJSON.Valid {
+			event.Tags = json.RawMessage(tagsJSON.String)
+		}
+		events = append(events, event)
+	}
+
+	totalPages := int(math.Ceil(float64(totalEvents) / float64(pageSize)))
+	return &models.PaginatedCommunityEvents{
+		Data: events,
+		Pagination: models.PaginationDetails{
+			TotalItems:  totalEvents,
+			TotalPages:  totalPages,
+			CurrentPage: page,
+			PageSize:    pageSize,
+		},
+	}, nil
 }

@@ -97,10 +97,11 @@ func main() {
 	wsProxy := websocketproxy.NewProxy(wsURL)
 
 	// Modificar el director del proxy API
-	originalDirectorAPI := apiProxy.Director
 	apiProxy.Director = func(req *http.Request) {
-		originalDirectorAPI(req)
+		req.URL.Scheme = apiURL.Scheme
+		req.URL.Host = apiURL.Host
 		req.Host = apiURL.Host
+		logger.Infof("PROXY_DIRECTOR", "Authorization Header: %s", req.Header.Get("Authorization"))
 	}
 
 	// Definir el manejador principal del proxy con CORS

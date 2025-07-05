@@ -58,3 +58,22 @@ type CompleteCompanyProfile struct {
 	Events  []CompanyEvent `json:"events"`
 	Stats   CompanyStats   `json:"stats"`
 }
+
+// EnterpriseProfileUpdate define los campos que una empresa puede actualizar.
+// Se usan punteros para que los campos no proporcionados en el JSON no se actualicen.
+type EnterpriseProfileUpdate struct {
+	CompanyName    *string `json:"companyName,omitempty"`
+	ContactEmail   *string `json:"contactEmail,omitempty"`
+	Twitter        *string `json:"twitter,omitempty"`
+	Facebook       *string `json:"facebook,omitempty"`
+	Phone          *string `json:"phone,omitempty"`
+	Picture        *string `json:"picture,omitempty"`
+	Summary        *string `json:"summary,omitempty"`
+	Address        *string `json:"address,omitempty"`
+	Github         *string `json:"github,omitempty"`
+	Linkedin       *string `json:"linkedin,omitempty"`
+	Sector         *string `json:"sector,omitempty"`
+	Location       *string `json:"location,omitempty"`
+	FoundationYear *int    `json:"foundationYear,omitempty"`
+	EmployeeCount  *int    `json:"employeeCount,omitempty"`
+}

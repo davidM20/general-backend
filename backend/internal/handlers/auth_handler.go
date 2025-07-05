@@ -15,6 +15,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/config" // Importar config
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/phonetic"
 
 	// Importa otros paquetes necesarios (ej. para validación, logging)
 
@@ -69,13 +70,23 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Generar claves fonéticas para el nombre de la persona
+	fullName := req.FirstName + " " + req.LastName
+	pKey, sKey, err := phonetic.GenerateKeysForPhrase(fullName)
+	if err != nil {
+		logger.Errorf("REGISTER", "Error al generar claves fonéticas para el usuario %s: %v", req.Email, err)
+		// No detener el registro, pero loguear el error. Las claves se guardarán vacías.
+		pKey = ""
+		sKey = ""
+	}
+
 	// Insertar usuario inicial usando la consulta centralizada
 	// Asignar rol por defecto (ej. invitado o pendiente) y estado pendiente
 	// TODO: Definir IDs para rol 'pendiente' y estado 'pendiente verificación'
 	defaultRoleId := 1   // Asumiendo 1 = /estudiante
 	defaultStatusId := 1 // Asumiendo 1 como verificado, 2 como pendiente de verificación
 
-	userID, err := queries.RegisterNewUser(h.DB, req, string(hashedPassword), defaultRoleId, defaultStatusId)
+	userID, err := queries.RegisterNewUser(h.DB, req, string(hashedPassword), defaultRoleId, defaultStatusId, pKey, sKey)
 	if err != nil {
 		http.Error(w, "Failed to register user", http.StatusInternalServerError)
 		return

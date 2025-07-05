@@ -68,7 +68,7 @@ func main() {
 
 	// Configurar el paquete customws
 	wsConfig := types.DefaultConfig()
-	wsConfig.AllowedOrigins = []string{"*"}
+	wsConfig.AllowedOrigins = []string{"*", "http://localhost:8083"}
 	wsConfig.WriteWait = 15 * time.Second
 	wsConfig.PongWait = 60 * time.Second
 	wsConfig.PingPeriod = (wsConfig.PongWait * 9) / 10
