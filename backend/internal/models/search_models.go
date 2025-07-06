@@ -35,9 +35,23 @@ type SearchResultProfile struct {
 
 // UniversalSearchResponse es la estructura de respuesta que combina usuarios y eventos.
 type UniversalSearchResponse struct {
-	Users      []SearchResultProfile `json:"users"`
-	Events     []CommunityEvent      `json:"events"`
-	Pagination PaginationDetails     `json:"pagination"`
+	Users              []SearchResultProfile `json:"users"`
+	Events             []CommunityEvent      `json:"events"`
+	Pagination         PaginationDetails     `json:"pagination"`
+	YearsDistribution  []YearsDistribution   `json:"years_distribution"`
+	CareerDistribution []CareerDistribution  `json:"career_distribution"`
+}
+
+// YearsDistribution representa la cuenta de usuarios por años de experiencia.
+type YearsDistribution struct {
+	Years int `json:"years"`
+	Count int `json:"count"`
+}
+
+// CareerDistribution representa la cuenta de usuarios por carrera.
+type CareerDistribution struct {
+	Career string `json:"career"`
+	Count  int    `json:"count"`
 }
 
 // PaginatedTalentResponse es una respuesta paginada solo para usuarios.

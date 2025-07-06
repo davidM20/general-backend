@@ -442,28 +442,51 @@ Description VARCHAR(255),
 FOREIGN KEY (EventId) REFERENCES Event(Id)
 );
 
--- Nueva tabla para Eventos Comunitarios del Feed
+
 CREATE TABLE IF NOT EXISTS CommunityEvent (
     Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    -- Define qué tipo de publicación es, incluyendo 'DESAFIO'.
+    PostType ENUM('EVENTO', 'NOTICIA', 'ARTICULO', 'ANUNCIO', 'MULTIMEDIA', 'DESAFIO') NOT NULL DEFAULT 'EVENTO',
+
     Title VARCHAR(255) NOT NULL,
     Description TEXT,
-    EventDate DATETIME NOT NULL,                -- Fecha y hora del evento
+    ImageUrl VARCHAR(255),
+
+    -- Enlace principal (para artículos, noticias, videos o repositorios de desafíos)
+    ContentUrl VARCHAR(2048) NULL,
+    LinkPreviewTitle VARCHAR(255) NULL,
+    LinkPreviewDescription VARCHAR(512) NULL,
+    LinkPreviewImage VARCHAR(2048) NULL,
+
+    -- Campos para EVENTOS
+    EventDate DATETIME NULL,
     Location VARCHAR(255),
-    Capacity INT NULL,                          -- Nuevo: Capacidad del evento
-    Price DECIMAL(10, 2) NULL,                -- Nuevo: Precio del evento
-    Tags JSON NULL,                             -- Nuevo: Etiquetas del evento (almacenadas como JSON array)
-    OrganizerCompanyName VARCHAR(255),          -- Nombre de la empresa organizadora (texto libre)
-    OrganizerUserId BIGINT,                     -- FK a User(Id) si el organizador es una empresa registrada en tu plataforma
-    OrganizerLogoUrl VARCHAR(255),              -- URL del logo del organizador
-    ImageUrl VARCHAR(255),                      -- URL de la imagen principal del evento
-    CreatedByUserId BIGINT NOT NULL,            -- Usuario de tu plataforma que publicó este evento
+    Capacity INT NULL,
+    Price DECIMAL(10, 2) NULL,
+    
+    -- --- NUEVOS CAMPOS PARA DESAFÍOS ---
+    ChallengeStartDate DATETIME NULL,
+    ChallengeEndDate DATETIME NULL,
+    ChallengeDifficulty ENUM('PRINCIPIANTE', 'INTERMEDIO', 'AVANZADO', 'EXPERTO') NULL,
+    ChallengePrize VARCHAR(512) NULL, -- Descripción del premio o recompensa
+    ChallengeStatus ENUM('ABIERTO', 'EN_EVALUACION', 'CERRADO', 'CANCELADO') NOT NULL DEFAULT 'ABIERTO',
+
+    -- --- CAMPOS COMUNES ---
+    Tags JSON NULL, -- Puede usarse para tecnologías (ej: ['React', 'Node.js'])
+    OrganizerCompanyName VARCHAR(255),
+    OrganizerUserId BIGINT,
+    OrganizerLogoUrl VARCHAR(255),
+    CreatedByUserId BIGINT NOT NULL,
     dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
     dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
     FOREIGN KEY (OrganizerUserId) REFERENCES User(Id) ON DELETE SET NULL,
     FOREIGN KEY (CreatedByUserId) REFERENCES User(Id) ON DELETE CASCADE
 );
+
 
 -- Índices para CommunityEvent
 CREATE INDEX idx_community_event_date ON CommunityEvent(EventDate);
@@ -647,3 +670,49 @@ ADD COLUMN dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_tit
 
 ALTER TABLE CommunityEvent
 ADD INDEX idx_community_event_phonetic_title (dmeta_title_primary, dmeta_title_secondary);
+
+
+CREATE TABLE IF NOT EXISTS JobApplication (
+    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    -- --- La Conexión Clave ---
+    -- Se conecta directamente con la publicación en la tabla CommunityEvent.
+    CommunityEventId BIGINT NOT NULL,
+
+    -- El usuario (estudiante/egresado) que se está postulando.
+    ApplicantId BIGINT NOT NULL,
+
+    -- El estado de la postulación dentro del proceso de selección.
+    Status ENUM(
+        'ENVIADA',
+        'EN_REVISION',
+        'ENTREVISTA',
+        'PRUEBA_TECNICA',
+        'OFERTA_REALIZADA',
+        'APROBADA',
+        'RECHAZADA',
+        'RETIRADA'
+    ) NOT NULL DEFAULT 'ENVIADA',
+
+    -- Fecha en que se realizó la postulación.
+    AppliedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Fecha de la última actualización del estado.
+    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Opcional: Un campo para una breve carta de presentación.
+    CoverLetter TEXT,
+
+    -- Definición de las llaves foráneas.
+    FOREIGN KEY (CommunityEventId) REFERENCES CommunityEvent(Id) ON DELETE CASCADE,
+    FOREIGN KEY (ApplicantId) REFERENCES User(Id) ON DELETE CASCADE,
+
+    -- Restricción para asegurar que un usuario no pueda postularse dos veces a la misma oferta.
+    UNIQUE KEY uq_event_applicant (CommunityEventId, ApplicantId)
+);
+
+-- Índices para consultas de alto rendimiento:
+-- Para que una empresa pueda ver rápidamente todos los postulantes a su oferta.
+CREATE INDEX idx_jobapplication_event_status ON JobApplication(CommunityEventId, Status);
+-- Para que un usuario pueda ver el estado de todas sus postulaciones.
+CREATE INDEX idx_jobapplication_applicant_status ON JobApplication(ApplicantId, Status);

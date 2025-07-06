@@ -15,6 +15,8 @@ type UserSearchResultData struct {
 	Career     string `json:"career,omitempty"`
 	University string `json:"university,omitempty"`
 	Headline   string `json:"headline"`
+	UserId     string `json:"userId"`
+	ChatId     string `json:"chatId,omitempty"`
 }
 
 // CompanySearchResultData contiene los datos específicos para un resultado de búsqueda de tipo "company".
@@ -24,4 +26,6 @@ type CompanySearchResultData struct {
 	Industry string `json:"industry"`
 	Location string `json:"location"`
 	Headline string `json:"headline"`
+	UserId   string `json:"userId"`
+	ChatId   string `json:"chatId,omitempty"`
 }

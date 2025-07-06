@@ -79,12 +79,6 @@ func GetUsersByCampus() ([]models.UserByCampus, error) {
 
 // GetMonthlyActivity retrieves the number of new user registrations over the last 12 months.
 func GetMonthlyActivity() ([]models.MonthlyActivity, error) {
-	// Generar los últimos 12 meses para el eje X
-	months := []string{}
-	for i := 11; i >= 0; i-- {
-		months = append(months, time.Now().AddDate(0, -i, 0).Format("Jan"))
-	}
-
 	query := `
 		SELECT
 			DATE_FORMAT(CreatedAt, '%Y-%m') AS month,

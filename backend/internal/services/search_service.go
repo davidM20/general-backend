@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
@@ -93,20 +94,82 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 		return &models.UniversalSearchResponse{Pagination: models.PaginationDetails{CurrentPage: params.Page, PageSize: params.Limit}}, nil
 	}
 
-	// Consulta de conteo
+	var wg sync.WaitGroup
+	var errChan = make(chan error, 3)
+	var response models.UniversalSearchResponse
+
+	// Goroutine 1: Obtener resultados paginados
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		paginatedUsers, paginatedEvents, pagination, err := s.fetchPaginatedResults(ctx, userQuery, eventQuery, userArgs, eventArgs, params)
+		if err != nil {
+			errChan <- fmt.Errorf("error fetching paginated results: %w", err)
+			return
+		}
+		response.Users = paginatedUsers
+		response.Events = paginatedEvents
+		response.Pagination = pagination
+	}()
+
+	// Goroutine 2: Obtener distribución de carreras
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		careerDist, err := s.fetchCareerDistribution(ctx, userConditions, userArgs)
+		if err != nil {
+			errChan <- fmt.Errorf("error fetching career distribution: %w", err)
+			return
+		}
+		response.CareerDistribution = careerDist
+	}()
+
+	// Goroutine 3: Obtener distribución de años de experiencia
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		yearsDist, err := s.fetchYearsDistribution(ctx, userConditions, userArgs)
+		if err != nil {
+			errChan <- fmt.Errorf("error fetching years distribution: %w", err)
+			return
+		}
+		response.YearsDistribution = yearsDist
+	}()
+
+	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			// Devolver el primer error que ocurra
+			return nil, err
+		}
+	}
+
+	return &response, nil
+}
+
+func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, eventQuery string, userArgs, eventArgs []interface{}, params models.UniversalSearchParams) ([]models.SearchResultProfile, []models.CommunityEvent, models.PaginationDetails, error) {
+	// Implementación de conteo y obtención de resultados paginados (lógica que ya teníamos)
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM ((%s) UNION ALL (%s)) as combined", userQuery, eventQuery)
 	countArgs := append(userArgs, eventArgs...)
 	var totalItems int
 	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems); err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error counting combined results: %v", err)
-		return nil, fmt.Errorf("error counting results: %w", err)
+		return nil, nil, models.PaginationDetails{}, fmt.Errorf("error counting results: %w", err)
+	}
+
+	pagination := models.PaginationDetails{
+		TotalItems:  totalItems,
+		TotalPages:  int(math.Ceil(float64(totalItems) / float64(params.Limit))),
+		CurrentPage: params.Page,
+		PageSize:    params.Limit,
 	}
 
 	if totalItems == 0 {
-		return &models.UniversalSearchResponse{Pagination: models.PaginationDetails{TotalItems: 0, CurrentPage: params.Page, PageSize: params.Limit}}, nil
+		return []models.SearchResultProfile{}, []models.CommunityEvent{}, pagination, nil
 	}
 
-	// Consulta de datos paginados
 	fullQuery := fmt.Sprintf("(%s) UNION ALL (%s) ORDER BY CreatedAt DESC LIMIT ? OFFSET ?", userQuery, eventQuery)
 	offset := (params.Page - 1) * params.Limit
 	queryArgs := append(append(userArgs, eventArgs...), params.Limit, offset)
@@ -114,7 +177,7 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 	rows, err := s.db.QueryContext(ctx, fullQuery, queryArgs...)
 	if err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error executing combined search: %v", err)
-		return nil, fmt.Errorf("error executing search: %w", err)
+		return nil, nil, pagination, fmt.Errorf("error executing search: %w", err)
 	}
 	defer rows.Close()
 
@@ -145,15 +208,67 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 			events = append(events, *event)
 		}
 	}
+	return users, events, pagination, nil
+}
 
-	return &models.UniversalSearchResponse{
-		Users:  users,
-		Events: events,
-		Pagination: models.PaginationDetails{
-			TotalItems:  totalItems,
-			TotalPages:  int(math.Ceil(float64(totalItems) / float64(params.Limit))),
-			CurrentPage: params.Page,
-			PageSize:    params.Limit,
-		},
-	}, nil
+func (s *SearchService) fetchCareerDistribution(ctx context.Context, userConditions []string, userArgs []interface{}) ([]models.CareerDistribution, error) {
+	query := `
+		SELECT e.Degree, COUNT(DISTINCT u.Id) as count
+		FROM User u
+		JOIN Education e ON u.Id = e.PersonId
+	`
+	if len(userConditions) > 0 {
+		query += " WHERE " + strings.Join(userConditions, " AND ")
+	}
+	query += " GROUP BY e.Degree ORDER BY count DESC LIMIT 10" // Limitar a los 10 más comunes
+
+	rows, err := s.db.QueryContext(ctx, query, userArgs...)
+	if err != nil {
+		logger.Errorf("SEARCH_SERVICE", "Error fetching career distribution: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var distribution []models.CareerDistribution
+	for rows.Next() {
+		var item models.CareerDistribution
+		if err := rows.Scan(&item.Career, &item.Count); err != nil {
+			logger.Errorf("SEARCH_SERVICE", "Error scanning career distribution row: %v", err)
+			continue
+		}
+		distribution = append(distribution, item)
+	}
+	return distribution, nil
+}
+
+func (s *SearchService) fetchYearsDistribution(ctx context.Context, userConditions []string, userArgs []interface{}) ([]models.YearsDistribution, error) {
+	query := `
+		SELECT FLOOR(TotalExperienceYears) as year, COUNT(*) as count
+		FROM (
+			SELECT u.Id, SUM(DATEDIFF(IF(we.IsCurrentJob, CURDATE(), we.EndDate), we.StartDate)) / 365.25 AS TotalExperienceYears
+			FROM User u
+			JOIN WorkExperience we ON u.Id = we.PersonId
+	`
+	if len(userConditions) > 0 {
+		query += " WHERE " + strings.Join(userConditions, " AND ")
+	}
+	query += " GROUP BY u.Id) AS exp_by_user WHERE TotalExperienceYears IS NOT NULL GROUP BY year ORDER BY year ASC"
+
+	rows, err := s.db.QueryContext(ctx, query, userArgs...)
+	if err != nil {
+		logger.Errorf("SEARCH_SERVICE", "Error fetching years distribution: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var distribution []models.YearsDistribution
+	for rows.Next() {
+		var item models.YearsDistribution
+		if err := rows.Scan(&item.Years, &item.Count); err != nil {
+			logger.Errorf("SEARCH_SERVICE", "Error scanning years distribution row: %v", err)
+			continue
+		}
+		distribution = append(distribution, item)
+	}
+	return distribution, nil
 }

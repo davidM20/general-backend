@@ -12,7 +12,7 @@ import (
 )
 
 type SearchService interface {
-	SearchAll(searchTerm string, limit, offset int) ([]wsmodels.SearchResultItem, error)
+	SearchAll(currentUserID int64, searchTerm string, limit, offset int) ([]wsmodels.SearchResultItem, error)
 }
 
 type searchService struct {
@@ -23,9 +23,9 @@ func NewSearchService(db *sql.DB) SearchService {
 	return &searchService{db: db}
 }
 
-func (s *searchService) SearchAll(searchTerm string, limit, offset int) ([]wsmodels.SearchResultItem, error) {
+func (s *searchService) SearchAll(currentUserID int64, searchTerm string, limit, offset int) ([]wsmodels.SearchResultItem, error) {
 	// 1. Llamar a la consulta de la base de datos
-	users, err := queries.SearchAll(searchTerm, limit, offset)
+	users, err := queries.SearchAll(currentUserID, searchTerm, limit, offset)
 	if err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error al buscar 'all': %v", err)
 		return nil, fmt.Errorf("error al realizar la búsqueda: %w", err)
@@ -49,11 +49,13 @@ func (s *searchService) mapUserToSearchResult(user models.User) wsmodels.SearchR
 	if user.RoleId == 3 { // Empresa
 		item.Type = "company"
 		item.Data = wsmodels.CompanySearchResultData{
-			Name:     user.UserName,
+			Name:     user.CompanyName.String,
 			Logo:     user.Picture.String,
-			Industry: "", // Campo no disponible en el modelo User simplificado
-			Location: "", // Campo no disponible
+			Industry: user.Sector.String,
+			Location: user.Location.String,
 			Headline: user.Summary.String,
+			UserId:   strconv.FormatInt(user.Id, 10),
+			ChatId:   user.ChatId.String,
 		}
 	} else { // Estudiante o Egresado
 		item.Type = "student"
@@ -63,9 +65,11 @@ func (s *searchService) mapUserToSearchResult(user models.User) wsmodels.SearchR
 		item.Data = wsmodels.UserSearchResultData{
 			Name:       user.FirstName.String + " " + user.LastName.String,
 			Avatar:     user.Picture.String,
-			Career:     "", // Campo no disponible
-			University: "", // Campo no disponible
+			Career:     user.DegreeName.String,
+			University: user.UniversityName.String,
 			Headline:   user.Summary.String,
+			UserId:     strconv.FormatInt(user.Id, 10),
+			ChatId:     user.ChatId.String,
 		}
 	}
 

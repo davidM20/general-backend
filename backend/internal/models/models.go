@@ -107,6 +107,10 @@ type User struct {
 	Address            sql.NullString `json:"address" db:"Address"`                         // Handle NULL
 	Github             sql.NullString `json:"github" db:"Github"`                           // Handle NULL
 	Linkedin           sql.NullString `json:"linkedin" db:"Linkedin"`                       // Handle NULL
+	CompanyName        sql.NullString `json:"company_name,omitempty" db:"CompanyName"`
+	Sector             sql.NullString `json:"sector,omitempty" db:"Sector"`
+	Location           sql.NullString `json:"location,omitempty" db:"Location"`
+	ChatId             sql.NullString `json:"chat_id,omitempty" db:"ChatId"`
 }
 
 // Online defines the structure for the Online table.

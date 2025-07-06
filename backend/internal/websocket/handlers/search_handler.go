@@ -79,6 +79,7 @@ func HandleSearchAll(conn *customws.Connection[wsmodels.WsUserData], msg types.C
 
 	// 2. Usar el servicio de búsqueda
 	dbConn := db.GetDB()
+
 	searchService := services.NewSearchService(dbConn)
 
 	// Establecer valores por defecto para limit y offset
@@ -89,7 +90,7 @@ func HandleSearchAll(conn *customws.Connection[wsmodels.WsUserData], msg types.C
 		payload.Offset = 0
 	}
 
-	results, err := searchService.SearchAll(payload.Query, payload.Limit, payload.Offset)
+	results, err := searchService.SearchAll(conn.ID, payload.Query, payload.Limit, payload.Offset)
 	if err != nil {
 		logger.Errorf("SEARCH_HANDLER", "Error en el servicio de búsqueda 'all': %v", err)
 		conn.SendErrorNotification(msg.PID, 500, "Error interno al realizar la búsqueda.")

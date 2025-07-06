@@ -6,40 +6,96 @@ import (
 	"time"
 )
 
-// CommunityEvent representa la estructura de un evento en la base de datos.
+// NullTime representa un time.Time que puede ser nulo, para compatibilidad con JSON.
+type NullTime struct {
+	sql.NullTime
+}
+
+// MarshalJSON para NullTime
+func (nt NullTime) MarshalJSON() ([]byte, error) {
+	if !nt.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(nt.Time)
+}
+
+// UnmarshalJSON para NullTime
+func (nt *NullTime) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		nt.Valid = false
+		return nil
+	}
+	var t time.Time
+	if err := json.Unmarshal(data, &t); err != nil {
+		return err
+	}
+	nt.Time = t
+	nt.Valid = true
+	return nil
+}
+
+// CommunityEvent representa la estructura de una publicación en el feed.
+// Puede ser un evento, noticia, artículo, etc., diferenciado por PostType.
 type CommunityEvent struct {
-	Id                   int64           `json:"id"`
-	Title                string          `json:"title"`
-	Description          NullString      `json:"description"`
-	EventDate            time.Time       `json:"event_date"`
-	Location             NullString      `json:"location"`
-	Capacity             NullInt32       `json:"capacity"`
-	Price                NullFloat64     `json:"price"`
-	Tags                 json.RawMessage `json:"tags"`
-	OrganizerCompanyName NullString      `json:"organizer_company_name"`
-	OrganizerUserId      NullInt64       `json:"organizer_user_id"`
-	OrganizerLogoUrl     NullString      `json:"organizer_logo_url"`
-	ImageUrl             NullString      `json:"image_url"`
-	CreatedByUserId      int64           `json:"created_by_user_id"`
+	Id                     int64       `json:"id"`
+	PostType               string      `json:"post_type"` // 'EVENTO', 'NOTICIA', 'ARTICULO', etc.
+	Title                  string      `json:"title"`
+	Description            NullString  `json:"description,omitempty"`
+	ImageUrl               NullString  `json:"image_url,omitempty"`
+	ContentUrl             NullString  `json:"content_url,omitempty"`
+	LinkPreviewTitle       NullString  `json:"link_preview_title,omitempty"`
+	LinkPreviewDescription NullString  `json:"link_preview_description,omitempty"`
+	LinkPreviewImage       NullString  `json:"link_preview_image,omitempty"`
+	EventDate              NullTime    `json:"event_date,omitempty"` // Modificado para ser nullable
+	Location               NullString  `json:"location,omitempty"`
+	Capacity               NullInt32   `json:"capacity,omitempty"`
+	Price                  NullFloat64 `json:"price,omitempty"`
+
+	// --- NUEVOS CAMPOS PARA DESAFÍOS ---
+	ChallengeStartDate  NullTime   `json:"challenge_start_date,omitempty"`
+	ChallengeEndDate    NullTime   `json:"challenge_end_date,omitempty"`
+	ChallengeDifficulty NullString `json:"challenge_difficulty,omitempty"`
+	ChallengePrize      NullString `json:"challenge_prize,omitempty"`
+	ChallengeStatus     string     `json:"challenge_status"`
+
+	// --- CAMPOS COMUNES ---
+	Tags                 json.RawMessage `json:"tags,omitempty"`
+	OrganizerCompanyName NullString      `json:"organizer_company_name,omitempty"`
+	OrganizerUserId      NullInt64       `json:"organizer_user_id,omitempty"`
+	OrganizerLogoUrl     NullString      `json:"organizer_logo_url,omitempty"`
+	CreatedByUserId      int64           `json:"-"`
 	DmetaTitlePrimary    string          `json:"-"`
 	DmetaTitleSecondary  string          `json:"-"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
-// CommunityEventCreateRequest representa los datos para crear un nuevo evento.
+// CommunityEventCreateRequest representa los datos para crear una nueva publicación en el feed.
 type CommunityEventCreateRequest struct {
-	Title                string          `json:"title"`
-	Description          string          `json:"description"`
-	EventDate            string          `json:"event_date"`
-	Location             string          `json:"location"`
-	Capacity             *int            `json:"capacity"`
-	Price                *float64        `json:"price"`
-	Tags                 json.RawMessage `json:"tags"`
-	OrganizerCompanyName string          `json:"organizer_company_name"`
-	OrganizerUserId      *int64          `json:"organizer_user_id"`
-	OrganizerLogoUrl     string          `json:"organizer_logo_url"`
-	ImageUrl             string          `json:"image_url"`
+	PostType               string   `json:"post_type"` // 'EVENTO', 'NOTICIA', 'ARTICULO', 'ANUNCIO', 'MULTIMEDIA', 'DESAFIO' etc.. Requerido.
+	Title                  string   `json:"title"`     // Requerido.
+	Description            *string  `json:"description,omitempty"`
+	ImageUrl               *string  `json:"image_url,omitempty"`
+	ContentUrl             *string  `json:"content_url,omitempty"`
+	LinkPreviewTitle       *string  `json:"link_preview_title,omitempty"`
+	LinkPreviewDescription *string  `json:"link_preview_description,omitempty"`
+	LinkPreviewImage       *string  `json:"link_preview_image,omitempty"`
+	EventDate              *string  `json:"event_date,omitempty"` // Formato "YYYY-MM-DD HH:MM:SS"
+	Location               *string  `json:"location,omitempty"`
+	Capacity               *int32   `json:"capacity,omitempty"`
+	Price                  *float64 `json:"price,omitempty"`
+
+	// --- NUEVOS CAMPOS PARA DESAFÍOS ---
+	ChallengeStartDate  *string `json:"challenge_start_date,omitempty"`
+	ChallengeEndDate    *string `json:"challenge_end_date,omitempty"`
+	ChallengeDifficulty *string `json:"challenge_difficulty,omitempty"`
+	ChallengePrize      *string `json:"challenge_prize,omitempty"`
+
+	// --- CAMPOS COMUNES ---
+	Tags                 json.RawMessage `json:"tags,omitempty"`
+	OrganizerCompanyName *string         `json:"organizer_company_name,omitempty"`
+	OrganizerUserId      *int64          `json:"organizer_user_id,omitempty"`
+	OrganizerLogoUrl     *string         `json:"organizer_logo_url,omitempty"`
 }
 
 // PaginatedCommunityEvents es la estructura para la respuesta paginada de eventos.

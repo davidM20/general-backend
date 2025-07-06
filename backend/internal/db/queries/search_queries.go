@@ -58,7 +58,7 @@ NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
 // Busca en los campos `UserName`, `FirstName`, `LastName` y `CompanyName`.
 //
 // Parámetros:
-//   - db: Conexión a la base de datos.
+//   - currentUserID: ID del usuario actual.
 //   - searchTerm: Término de búsqueda.
 //   - limit: Número máximo de resultados a devolver.
 //   - offset: Número de resultados a omitir.
@@ -66,35 +66,54 @@ NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
 // Retorna:
 //   - Una lista de usuarios (`[]models.User`) que coinciden con el término de búsqueda.
 //   - Un error si la consulta falla.
-func SearchAll(searchTerm string, limit, offset int) ([]models.User, error) {
+func SearchAll(currentUserID int64, searchTerm string, limit, offset int) ([]models.User, error) {
 	query := `
-        SELECT
-            u.Id,
-            u.FirstName,
-            u.LastName,
-            CASE
-                WHEN u.RoleId = 3 THEN u.CompanyName
-                ELSE u.UserName
-            END,
-            u.Picture,
-            u.Summary,
-            u.RoleId
-        FROM User u
-        WHERE
-            (u.RoleId IN (1, 2) AND (
-                u.UserName LIKE ? OR
-                u.FirstName LIKE ? OR
-                u.LastName LIKE ?
-            )) OR
-            (u.RoleId = 3 AND (
-                u.CompanyName LIKE ? OR
-                u.Sector LIKE ?
-            ))
-        LIMIT ? OFFSET ?;
-    `
+	SELECT
+		u.Id,
+		u.FirstName,
+		u.LastName,
+		u.UserName,
+		u.Picture,
+		u.Summary,
+		u.RoleId,
+		u.CompanyName,
+		u.Sector,
+		u.Location,
+		e.Institution AS UniversityName,
+		e.Degree AS DegreeName,
+		c.ChatId
+	FROM User u
+	LEFT JOIN (
+		-- Subconsulta para obtener solo la educación más reciente por usuario
+		SELECT PersonId, Institution, Degree
+		FROM Education
+		WHERE (PersonId, GraduationDate) IN (
+			SELECT PersonId, MAX(GraduationDate)
+			FROM Education
+			GROUP BY PersonId
+		)
+	) e ON u.Id = e.PersonId
+	LEFT JOIN Contact c ON ((c.User1Id = ? AND c.User2Id = u.Id) OR (c.User1Id = u.Id AND c.User2Id = ?)) AND c.Status = 'accepted'
+	WHERE
+		u.Id != ? AND
+		(
+			(u.RoleId IN (1, 2) AND (
+				u.UserName LIKE ? OR
+				u.FirstName LIKE ? OR
+				u.LastName LIKE ? OR
+				e.Institution LIKE ? OR
+				e.Degree LIKE ?
+			)) OR
+			(u.RoleId = 3 AND (
+				u.CompanyName LIKE ? OR
+				u.Sector LIKE ?
+			))
+		)
+	LIMIT ? OFFSET ?;
+`
 
 	likeTerm := "%" + searchTerm + "%"
-	rows, err := DB.Query(query, likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, limit, offset)
+	rows, err := DB.Query(query, currentUserID, currentUserID, currentUserID, likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error al ejecutar la consulta de búsqueda 'all': %w", err)
 	}
@@ -105,8 +124,19 @@ func SearchAll(searchTerm string, limit, offset int) ([]models.User, error) {
 		var user models.User
 
 		err := rows.Scan(
-			&user.Id, &user.FirstName, &user.LastName, &user.UserName, &user.Picture, &user.Summary,
+			&user.Id,
+			&user.FirstName,
+			&user.LastName,
+			&user.UserName,
+			&user.Picture,
+			&user.Summary,
 			&user.RoleId,
+			&user.CompanyName,
+			&user.Sector,
+			&user.Location,
+			&user.UniversityName,
+			&user.DegreeName,
+			&user.ChatId,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error al escanear la fila de búsqueda 'all': %w", err)

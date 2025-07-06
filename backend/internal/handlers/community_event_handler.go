@@ -46,6 +46,13 @@ func (h *CommunityEventHandler) CreateCommunityEvent(w http.ResponseWriter, r *h
 		return
 	}
 
+	// Validación básica para campos requeridos
+	if req.PostType == "" || req.Title == "" {
+		logger.Warnf("COMMUNITY_EVENT_HANDLER", "CreateCommunityEvent: Faltan campos requeridos PostType o Title")
+		http.Error(w, "Los campos 'post_type' y 'title' son requeridos", http.StatusBadRequest)
+		return
+	}
+
 	// Llamar al servicio para crear el evento
 	createdEvent, err := h.Service.CreateCommunityEvent(req, createdByUserID)
 	if err != nil {

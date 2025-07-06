@@ -115,6 +115,14 @@ const (
 	CommunityEventsPath   = "/community-events"
 	MyCommunityEventsPath = CommunityEventsPath + "/my-events"
 
+	// Rutas de Postulaciones (Job Applications)
+	ApplyToEventPath        = CommunityEventsPath + "/{eventID:[0-9]+}/apply"
+	ListEventApplicantsPath = CommunityEventsPath + "/{eventID:[0-9]+}/applicants"
+
+	// Rutas de Notificaciones
+	NotificationsPath          = "/notifications"
+	MarkNotificationAsReadPath = NotificationsPath + "/{notificationID:[0-9]+}/read"
+
 	// Rutas de Búsqueda
 	SearchTalentPath = "/search/talent"
 
@@ -183,6 +191,13 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	setupProtectedRoute(protected, CommunityEventsPath, handlers.communityEventHandler.CreateCommunityEvent, http.MethodPost)
 	setupProtectedRoute(protected, MyCommunityEventsPath, handlers.communityEventHandler.GetMyCommunityEvents, http.MethodGet)
 
+	// Rutas de Postulaciones
+	setupProtectedRoute(protected, ApplyToEventPath, handlers.jobApplicationHandler.ApplyToJob, http.MethodPost)
+	setupProtectedRoute(protected, ListEventApplicantsPath, handlers.jobApplicationHandler.ListApplicants, http.MethodGet)
+
+	// Rutas de Notificaciones
+	setupProtectedRoute(protected, MarkNotificationAsReadPath, handlers.notificationHandler.MarkAsRead, http.MethodPut)
+
 	// Rutas de Búsqueda
 	setupProtectedRoute(protected, SearchTalentPath, handlers.searchHandler.SearchTalent, http.MethodGet)
 
@@ -206,6 +221,8 @@ type serviceHandlers struct {
 	videoHandler          *handlers.VideoHandler
 	searchHandler         *handlers.SearchHandler
 	adminHandler          *handlers.AdminHandler
+	notificationHandler   *handlers.NotificationHandler
+	jobApplicationHandler *handlers.JobApplicationHandler
 }
 
 // initializeHandlers crea e inicializa todas las instancias de handlers necesarias
@@ -216,6 +233,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 	pdfUploadService := services.NewPDFUploadService(db, cfg)
 	videoUploadService := services.NewVideoUploadService(db, cfg)
 	searchService := services.NewSearchService(db)
+	jobApplicationService := services.NewJobApplicationService(db)
 
 	return serviceHandlers{
 		authHandler:           handlers.NewAuthHandler(db, cfg),
@@ -231,6 +249,8 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		videoHandler:          handlers.NewVideoHandler(videoUploadService, db, cfg),
 		searchHandler:         handlers.NewSearchHandler(searchService),
 		adminHandler:          handlers.NewAdminHandler(db, cfg),
+		notificationHandler:   handlers.NewNotificationHandler(db),
+		jobApplicationHandler: handlers.NewJobApplicationHandler(jobApplicationService),
 	}
 }
 

@@ -71,8 +71,8 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 	now := time.Now()
 
 	// Convertir punteros y slices a tipos SQL adecuados
-	description := models.ToNullString(&eventData.Description)
-	location := models.ToNullString(&eventData.Location)
+	description := models.ToNullString(eventData.Description)
+	location := models.ToNullString(eventData.Location)
 
 	var capacity sql.NullInt32
 	if eventData.Capacity != nil {
@@ -94,9 +94,9 @@ func InsertCommunityEvent(db *sql.DB, eventData models.CommunityEventCreateReque
 		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error marshalling tags to JSON for event '%s': %v", eventData.Title, err)
 		return 0, err
 	}
-	organizerCompanyName := models.ToNullString(&eventData.OrganizerCompanyName)
+	organizerCompanyName := models.ToNullString(eventData.OrganizerCompanyName)
 	organizerUserID := models.ToNullInt64(eventData.OrganizerUserId)
-	imageURL := models.ToNullString(&eventData.ImageUrl)
+	imageURL := models.ToNullString(eventData.ImageUrl)
 
 	result, err := MeasureQueryWithResult(func() (interface{}, error) {
 		return db.Exec(
@@ -214,91 +214,176 @@ func GetCommunityEventsByUserIDPaginated(db *sql.DB, userID int64, limit, offset
 func CreateCommunityEvent(db *sql.DB, req models.CommunityEventCreateRequest, createdByUserID int64, pKey, sKey string) (int64, error) {
 	query := `
         INSERT INTO CommunityEvent (
-            Title, Description, EventDate, Location, Capacity, Price, Tags,
-            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, CreatedByUserID,
+            PostType, Title, Description, ImageUrl, ContentUrl, LinkPreviewTitle, 
+            LinkPreviewDescription, LinkPreviewImage, EventDate, Location, Capacity, Price, 
+            ChallengeStartDate, ChallengeEndDate, ChallengeDifficulty, ChallengePrize,
+            Tags, OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, CreatedByUserId, 
             dmeta_title_primary, dmeta_title_secondary, CreatedAt, UpdatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+	now := time.Now()
 
-	eventDate, err := time.Parse(time.RFC3339, req.EventDate)
-	if err != nil {
-		return 0, fmt.Errorf("formato de fecha de evento inválido: %w", err)
+	// Convertir punteros a tipos SQL adecuados.
+	description := models.ToNullString(req.Description)
+	imageUrl := models.ToNullString(req.ImageUrl)
+	contentUrl := models.ToNullString(req.ContentUrl)
+	linkPreviewTitle := models.ToNullString(req.LinkPreviewTitle)
+	linkPreviewDescription := models.ToNullString(req.LinkPreviewDescription)
+	linkPreviewImage := models.ToNullString(req.LinkPreviewImage)
+	location := models.ToNullString(req.Location)
+	organizerCompanyName := models.ToNullString(req.OrganizerCompanyName)
+	organizerLogoUrl := models.ToNullString(req.OrganizerLogoUrl)
+	organizerUserID := models.ToNullInt64(req.OrganizerUserId)
+	price := models.ToNullFloat64(req.Price)
+	challengeDifficulty := models.ToNullString(req.ChallengeDifficulty)
+	challengePrize := models.ToNullString(req.ChallengePrize)
+
+	var eventDate sql.NullTime
+	if req.EventDate != nil {
+		t, err := time.Parse("2006-01-02 15:04:05", *req.EventDate)
+		if err != nil {
+			logger.Warnf("COMMUNITY_EVENT_QUERIES", "Fecha de evento inválida: %v. Se guardará como NULL.", err)
+		} else {
+			eventDate.Time = t
+			eventDate.Valid = true
+		}
 	}
 
-	description := models.ToNullString(&req.Description)
-	location := models.ToNullString(&req.Location)
+	var challengeStartDate sql.NullTime
+	if req.ChallengeStartDate != nil {
+		t, err := time.Parse("2006-01-02 15:04:05", *req.ChallengeStartDate)
+		if err != nil {
+			logger.Warnf("COMMUNITY_EVENT_QUERIES", "Fecha de inicio de desafío inválida: %v. Se guardará como NULL.", err)
+		} else {
+			challengeStartDate.Time = t
+			challengeStartDate.Valid = true
+		}
+	}
+
+	var challengeEndDate sql.NullTime
+	if req.ChallengeEndDate != nil {
+		t, err := time.Parse("2006-01-02 15:04:05", *req.ChallengeEndDate)
+		if err != nil {
+			logger.Warnf("COMMUNITY_EVENT_QUERIES", "Fecha de fin de desafío inválida: %v. Se guardará como NULL.", err)
+		} else {
+			challengeEndDate.Time = t
+			challengeEndDate.Valid = true
+		}
+	}
 
 	var capacity sql.NullInt32
 	if req.Capacity != nil {
 		capacity.Valid = true
-		capacity.Int32 = int32(*req.Capacity)
+		capacity.Int32 = *req.Capacity
 	}
 
-	price := models.ToNullFloat64(req.Price)
-
-	var tags []string
+	var tagsJSON sql.NullString
 	if len(req.Tags) > 0 && string(req.Tags) != "null" {
-		if err := json.Unmarshal(req.Tags, &tags); err != nil {
-			logger.Errorf("QUERIES", "Error al desglosar etiquetas JSON para el evento '%s': %v", req.Title, err)
-			return 0, err
-		}
+		tagsJSON.String = string(req.Tags)
+		tagsJSON.Valid = true
 	}
-	tagsJSON, err := models.TagsToJSON(tags)
+
+	result, err := db.Exec(
+		query,
+		req.PostType,
+		req.Title,
+		description,
+		imageUrl,
+		contentUrl,
+		linkPreviewTitle,
+		linkPreviewDescription,
+		linkPreviewImage,
+		eventDate,
+		location,
+		capacity,
+		price,
+		challengeStartDate,
+		challengeEndDate,
+		challengeDifficulty,
+		challengePrize,
+		tagsJSON,
+		organizerCompanyName,
+		organizerUserID,
+		organizerLogoUrl,
+		createdByUserID,
+		pKey,
+		sKey,
+		now,
+		now,
+	)
+
 	if err != nil {
-		logger.Errorf("QUERIES", "Error al convertir etiquetas a JSON para el evento '%s': %v", req.Title, err)
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error inserting community event '%s': %v", req.Title, err)
 		return 0, err
 	}
 
-	organizerCompanyName := models.ToNullString(&req.OrganizerCompanyName)
-	organizerUserID := models.ToNullInt64(req.OrganizerUserId)
-	organizerLogoUrl := models.ToNullString(&req.OrganizerLogoUrl)
-	imageUrl := models.ToNullString(&req.ImageUrl)
-	now := time.Now()
-
-	result, err := db.Exec(query,
-		req.Title, description, eventDate, location, capacity, price, tagsJSON,
-		organizerCompanyName, organizerUserID, organizerLogoUrl, imageUrl, createdByUserID,
-		pKey, sKey, now, now,
-	)
+	newEventId, err := result.LastInsertId()
 	if err != nil {
-		logger.Errorf("QUERIES", "Error al insertar un nuevo evento comunitario: %v", err)
-		return 0, fmt.Errorf("no se pudo crear el evento en la base de datos: %w", err)
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error getting last insert ID for community event '%s': %v", req.Title, err)
+		return 0, err
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		logger.Errorf("QUERIES", "Error al obtener el LastInsertId para el nuevo evento: %v", err)
-		return 0, fmt.Errorf("no se pudo obtener el ID del nuevo evento: %w", err)
-	}
-
-	logger.Successf("QUERIES", "Evento comunitario creado con éxito con ID: %d", id)
-	return id, nil
+	return newEventId, nil
 }
 
-// GetCommunityEventByID recupera un único evento comunitario por su ID.
+// GetCommunityEventByID recupera un evento por su ID.
 func GetCommunityEventByID(db *sql.DB, eventID int64) (*models.CommunityEvent, error) {
 	query := `
-        SELECT
-            Id, Title, Description, EventDate, Location, Capacity, Price, Tags,
-            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, CreatedByUserId,
-            CreatedAt, UpdatedAt
-        FROM CommunityEvent WHERE Id = ?`
+        SELECT 
+            Id, PostType, Title, Description, ImageUrl, ContentUrl, 
+            LinkPreviewTitle, LinkPreviewDescription, LinkPreviewImage, 
+            EventDate, Location, Capacity, Price, 
+            ChallengeStartDate, ChallengeEndDate, ChallengeDifficulty, ChallengePrize, ChallengeStatus,
+            Tags, OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, 
+            CreatedByUserId, CreatedAt, UpdatedAt
+        FROM CommunityEvent 
+        WHERE Id = ?
+    `
+
+	row := db.QueryRow(query, eventID)
 
 	var event models.CommunityEvent
-	var tagsJSON sql.NullString
-	err := db.QueryRow(query, eventID).Scan(
-		&event.Id, &event.Title, &event.Description, &event.EventDate, &event.Location,
-		&event.Capacity, &event.Price, &tagsJSON, &event.OrganizerCompanyName,
-		&event.OrganizerUserId, &event.OrganizerLogoUrl, &event.ImageUrl, &event.CreatedByUserId,
-		&event.CreatedAt, &event.UpdatedAt,
+	var tagsJSON sql.NullString // Para manejar la columna JSON que puede ser nula
+
+	err := row.Scan(
+		&event.Id,
+		&event.PostType,
+		&event.Title,
+		&event.Description,
+		&event.ImageUrl,
+		&event.ContentUrl,
+		&event.LinkPreviewTitle,
+		&event.LinkPreviewDescription,
+		&event.LinkPreviewImage,
+		&event.EventDate,
+		&event.Location,
+		&event.Capacity,
+		&event.Price,
+		&event.ChallengeStartDate,
+		&event.ChallengeEndDate,
+		&event.ChallengeDifficulty,
+		&event.ChallengePrize,
+		&event.ChallengeStatus,
+		&tagsJSON,
+		&event.OrganizerCompanyName,
+		&event.OrganizerUserId,
+		&event.OrganizerLogoUrl,
+		&event.CreatedByUserId,
+		&event.CreatedAt,
+		&event.UpdatedAt,
 	)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("evento con ID %d no encontrado", eventID)
+			logger.Warnf("COMMUNITY_EVENT_QUERIES", "No community event found with ID %d", eventID)
+			return nil, fmt.Errorf("evento no encontrado")
 		}
-		logger.Errorf("QUERIES", "Error al escanear el evento con ID %d: %v", eventID, err)
-		return nil, err
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error scanning community event with ID %d: %v", eventID, err)
+		return nil, fmt.Errorf("error al obtener el evento de la base de datos")
 	}
 
+	// Deserializar las etiquetas si no son nulas
 	if tagsJSON.Valid {
 		event.Tags = json.RawMessage(tagsJSON.String)
 	}
@@ -306,7 +391,7 @@ func GetCommunityEventByID(db *sql.DB, eventID int64) (*models.CommunityEvent, e
 	return &event, nil
 }
 
-// GetMyCommunityEvents recupera una lista paginada de eventos creados por un usuario específico.
+// GetMyCommunityEvents recupera los eventos de un usuario con paginación.
 func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models.PaginatedCommunityEvents, error) {
 	var totalEvents int
 	countQuery := "SELECT COUNT(*) FROM CommunityEvent WHERE CreatedByUserId = ?"
@@ -325,11 +410,12 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 
 	offset := (page - 1) * pageSize
 	query := `
-        SELECT
-            Id, Title, Description, EventDate, Location, Capacity, Price, Tags,
-            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl, ImageUrl, CreatedByUserId,
-            CreatedAt, UpdatedAt
-        FROM CommunityEvent
+        SELECT 
+            Id, PostType, Title, Description, ImageUrl, ContentUrl, LinkPreviewTitle, 
+            LinkPreviewDescription, LinkPreviewImage, EventDate, Location, Capacity, Price, Tags,
+            OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl,
+            CreatedByUserId, CreatedAt, UpdatedAt
+        FROM CommunityEvent 
         WHERE CreatedByUserId = ?
         ORDER BY EventDate DESC
         LIMIT ? OFFSET ?`
@@ -344,18 +430,31 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 	var events []models.CommunityEvent
 	for rows.Next() {
 		var event models.CommunityEvent
-		var tagsJSON sql.NullString
-		if err := rows.Scan(
-			&event.Id, &event.Title, &event.Description, &event.EventDate, &event.Location,
-			&event.Capacity, &event.Price, &tagsJSON, &event.OrganizerCompanyName,
-			&event.OrganizerUserId, &event.OrganizerLogoUrl, &event.ImageUrl, &event.CreatedByUserId,
-			&event.CreatedAt, &event.UpdatedAt,
-		); err != nil {
-			logger.Errorf("QUERIES", "Error al escanear la fila del evento: %v", err)
+		err := rows.Scan(
+			&event.Id,
+			&event.PostType,
+			&event.Title,
+			&event.Description,
+			&event.ImageUrl,
+			&event.ContentUrl,
+			&event.LinkPreviewTitle,
+			&event.LinkPreviewDescription,
+			&event.LinkPreviewImage,
+			&event.EventDate,
+			&event.Location,
+			&event.Capacity,
+			&event.Price,
+			&event.Tags,
+			&event.OrganizerCompanyName,
+			&event.OrganizerUserId,
+			&event.OrganizerLogoUrl,
+			&event.CreatedByUserId,
+			&event.CreatedAt,
+			&event.UpdatedAt,
+		)
+		if err != nil {
+			logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error scanning community event row for user ID %d: %v", userID, err)
 			continue
-		}
-		if tagsJSON.Valid {
-			event.Tags = json.RawMessage(tagsJSON.String)
 		}
 		events = append(events, event)
 	}
