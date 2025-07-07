@@ -4,6 +4,7 @@ package models
 // combinando la búsqueda fonética por texto con filtros estructurados.
 type UniversalSearchParams struct {
 	Query                string
+	Role                 string
 	Career               string
 	University           string
 	GraduationYear       int
@@ -31,6 +32,7 @@ type SearchResultProfile struct {
 	TotalReputation   *int     `json:"total_reputation"`
 	AverageRating     *float64 `json:"average_rating"`
 	RoleId            int64    `json:"role_id"`
+	Role              string   `json:"role"`
 }
 
 // UniversalSearchResponse es la estructura de respuesta que combina usuarios y eventos.

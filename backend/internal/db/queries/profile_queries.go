@@ -271,6 +271,18 @@ func GetUserProfileByID(db *sql.DB, userID int64) (*models.SearchResultProfile, 
 		return nil, err
 	}
 
+	// Traducir RoleId a un string legible
+	switch profile.RoleId {
+	case 1:
+		profile.Role = "student"
+	case 2:
+		profile.Role = "graduate"
+	case 3:
+		profile.Role = "company"
+	default:
+		profile.Role = "unknown"
+	}
+
 	return profile, nil
 }
 

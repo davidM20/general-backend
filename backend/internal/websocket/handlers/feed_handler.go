@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/services"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
@@ -78,6 +79,25 @@ func (h *FeedHandler) getFeedList(conn *customws.Connection[wsmodels.WsUserData]
 	userID := conn.ID
 	logger.Infof("FEED_HANDLER", "Procesando get_list para el feed, UserID: %d, PID: %s", userID, msg.PID)
 
+	// Extraer parámetros de paginación del payload
+	var page, limit int
+	if data, ok := msg.Payload.(map[string]interface{}); ok {
+		if p, ok := data["page"].(float64); ok {
+			page = int(p)
+		}
+		if l, ok := data["limit"].(float64); ok {
+			limit = int(l)
+		}
+	}
+
+	// Establecer valores por defecto si no se proporcionaron
+	if page == 0 {
+		page = 1
+	}
+	if limit == 0 {
+		limit = 10 // Límite por defecto
+	}
+
 	// Enviar ACK para el PID original si existe, para satisfacer al WSClient del frontend
 	if msg.PID != "" {
 		ackPayload := types.AckPayload{AcknowledgedPID: msg.PID, Status: "processing_feed_list"} // O "received_ok"
@@ -95,30 +115,28 @@ func (h *FeedHandler) getFeedList(conn *customws.Connection[wsmodels.WsUserData]
 		}
 	}
 
-	feedItems, err := h.feedService.GetFeedItems(userID)
+	// El servicio ahora devuelve la estructura de payload completa, lista para ser enviada.
+	payload, err := h.feedService.GetFeedItems(userID, page, limit)
 	if err != nil {
-		logger.Errorf("FEED_HANDLER", "Error obteniendo items del feed para UserID %d: %v", userID, err)
-		// Si ya se envió un ACK de "processing", aquí se podría enviar una error_notification específica
-		conn.SendErrorNotification(msg.PID, 500, "Error obteniendo la lista del feed.")
+		// El servicio ya registra el error, así que aquí solo notificamos al cliente.
+		errorMsg := fmt.Sprintf("no se pudo obtener el feed para el usuario %d", userID)
+		conn.SendErrorNotification(msg.PID, 500, errorMsg)
+		return fmt.Errorf("error desde feedService.GetFeedItems: %w", err)
+	}
+
+	// Creamos el mensaje de respuesta con el payload que ya tiene el formato correcto.
+	responseMessage := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       types.MessageTypeDataEvent,
+		Payload:    payload, // El payload ya contiene {items: [...], pagination: {...}}
+		FromUserID: 0,       // Indica que es un mensaje del sistema/servidor
+	}
+
+	if err := conn.SendMessage(responseMessage); err != nil {
+		logger.Errorf("FEED_HANDLER", "Error enviando la lista del feed a UserID %d: %v", userID, err)
 		return err
 	}
 
-	responsePayload := wsmodels.FeedListResponsePayload{
-		Items: feedItems,
-	}
-
-	serverResponse := types.ServerToClientMessage{
-		PID:        conn.Manager().Callbacks().GeneratePID(),
-		Type:       types.MessageTypeDataEvent, // Este es el evento que el frontend espera para los datos
-		FromUserID: 0,
-		Payload:    responsePayload,
-	}
-
-	if err := conn.SendMessage(serverResponse); err != nil {
-		logger.Errorf("FEED_HANDLER", "Error enviando respuesta data_event de feed_list a UserID %d: %v", userID, err)
-		return err // Si no podemos enviar los datos, es un error significativo
-	}
-
-	logger.Successf("FEED_HANDLER", "Lista del feed (data_event) enviada exitosamente a UserID %d. Items: %d", userID, len(feedItems))
+	logger.Successf("FEED_HANDLER", "Lista del feed (data_event) enviada exitosamente a UserID %d. Items: %d", userID, len(payload.Items))
 	return nil
 }

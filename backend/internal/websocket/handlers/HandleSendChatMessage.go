@@ -72,10 +72,11 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 	// O modificar ProcessAndSaveChatMessage para que acepte un struct.
 	// Por ahora, mantenemos la firma de ProcessAndSaveChatMessage.
 	servicePayload := map[string]interface{}{
-		"chatId":     payload.ChatId,
-		"text":       payload.Text,
-		"mediaId":    payload.MediaId,
-		"responseTo": payload.ResponseTo, // Añadido
+		"chatId":           payload.ChatId,
+		"text":             payload.Text, // Para compatibilidad futura
+		"content":          payload.Text, // Clave que espera el servicio
+		"mediaId":          payload.MediaId,
+		"replyToMessageId": payload.ResponseTo, // unificar nomenclatura
 		// typeMessageId podría pasarse o dejarse que el servicio lo determine
 	}
 	if payload.TypeMessageId != 0 {

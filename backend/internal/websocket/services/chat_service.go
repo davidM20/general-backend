@@ -393,4 +393,60 @@ func GetChatParticipants(chatID string) (int64, int64, error) {
 	return contact.User1Id, contact.User2Id, nil
 }
 
+// MarkMessageAsRead marca un mensaje específico como leído y notifica al remitente si está en línea.
+func MarkMessageAsRead(userID int64, messageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
+	if chatDB == nil {
+		return errors.New("chat service no inicializado con conexión a BD")
+	}
+
+	// Actualizar estado
+	res, err := chatDB.Exec(`UPDATE Message SET Status = 'read' WHERE Id = ?`, messageID)
+	if err != nil {
+		logger.Errorf("SERVICE_CHAT", "Error actualizando estado de mensaje %s: %v", messageID, err)
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		// Puede que ya estuviera en 'read' o que no exista
+		var existingStatus string
+		err := chatDB.QueryRow(`SELECT Status FROM Message WHERE Id = ?`, messageID).Scan(&existingStatus)
+		if err == sql.ErrNoRows {
+			return errors.New("mensaje no encontrado")
+		}
+		if err != nil {
+			return err
+		}
+		// Si ya estaba leído, lo consideramos éxito idempotente
+		if existingStatus == "read" {
+			logger.Debugf("SERVICE_CHAT", "Mensaje %s ya estaba marcado como leído", messageID)
+			return nil
+		}
+		return errors.New("no se pudo marcar como leído")
+	}
+
+	// Opcional: notificar al remitente si está en línea
+	if manager != nil {
+		// Obtener info básica
+		var senderID int64
+		err := chatDB.QueryRow(`SELECT SenderId FROM Message WHERE Id = ?`, messageID).Scan(&senderID)
+		if err == nil && manager.IsUserOnline(senderID) {
+			ack := customwsTypes.ServerToClientMessage{
+				Type:       "message_read",
+				FromUserID: userID,
+				Payload: map[string]interface{}{
+					"messageId": messageID,
+				},
+				PID: manager.Callbacks().GeneratePID(),
+			}
+			fromConn, ok := manager.GetConnection(userID)
+			if ok {
+				_ = manager.HandlePeerToPeerMessage(fromConn, senderID, ack)
+			}
+		}
+	}
+
+	logger.Infof("SERVICE_CHAT", "Mensaje %s marcado como leído por UserID %d", messageID, userID)
+	return nil
+}
+
 // TODO: Implementar GetMessagesForChat, MarkMessagesAsRead, SetUserTypingStatus

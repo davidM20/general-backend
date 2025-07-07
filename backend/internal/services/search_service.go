@@ -57,7 +57,34 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 		userConditions = append(userConditions, "("+strings.Join(userTextSearchConditions, " OR ")+")")
 	}
 
+	// Si se aplica un filtro que es exclusivo para talento, la búsqueda se centrará solo en usuarios.
+	isTalentOnlySearch := params.Role != "" ||
+		params.Career != "" ||
+		params.University != "" ||
+		params.GraduationYear != 0 ||
+		params.IsCurrentlyStudying != nil ||
+		params.IsCurrentlyWorking != nil ||
+		len(params.Skills) > 0 ||
+		len(params.Languages) > 0 ||
+		params.YearsOfExperienceMin > 0 ||
+		params.YearsOfExperienceMax > 0
+
 	// === CONSTRUIR FILTROS DE USUARIO ===
+	if params.Role != "" {
+		var roleId int
+		switch params.Role {
+		case "student":
+			roleId = 1
+		case "graduate":
+			roleId = 2
+		}
+
+		if roleId > 0 {
+			userConditions = append(userConditions, "u.RoleId = ?")
+			userArgs = append(userArgs, roleId)
+		}
+	}
+
 	if params.Career != "" {
 		userConditions = append(userConditions, "EXISTS (SELECT 1 FROM Education e WHERE e.PersonId = u.Id AND e.Degree LIKE ?)")
 		userArgs = append(userArgs, "%"+params.Career+"%")
@@ -72,10 +99,15 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 	}
 	// ... (Aquí se pueden añadir más filtros de usuario como skills, graduation_year, etc.)
 
-	// === CONSTRUIR FILTROS DE EVENTOS ===
-	if params.Location != "" {
-		eventConditions = append(eventConditions, "ce.Location LIKE ?")
-		eventArgs = append(eventArgs, "%"+params.Location+"%")
+	// === CONSTRUIR FILTROS DE EVENTOS (solo si no es una búsqueda de talento) ===
+	if !isTalentOnlySearch {
+		if params.Location != "" {
+			eventConditions = append(eventConditions, "ce.Location LIKE ?")
+			eventArgs = append(eventArgs, "%"+params.Location+"%")
+		}
+	} else {
+		// Nos aseguramos de que los argumentos de eventos estén vacíos para no contaminar la consulta final.
+		eventArgs = []interface{}{}
 	}
 
 	// === CONSTRUIR CONSULTAS FINALES ===
@@ -84,13 +116,20 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 		userQuery += " WHERE " + strings.Join(userConditions, " AND ")
 	}
 
-	eventQuery := "SELECT 'event' as type, ce.Id, ce.CreatedAt FROM CommunityEvent ce"
-	if len(eventConditions) > 0 {
-		eventQuery += " WHERE " + strings.Join(eventConditions, " AND ")
+	var eventQuery string
+	if !isTalentOnlySearch {
+		eventQuery = "SELECT 'event' as type, ce.Id, ce.CreatedAt FROM CommunityEvent ce"
+		if len(eventConditions) > 0 {
+			eventQuery += " WHERE " + strings.Join(eventConditions, " AND ")
+		}
 	}
 
 	// Si no hay filtros ni query, no devolver nada.
-	if len(userConditions) == 0 && len(eventConditions) == 0 {
+	if len(userConditions) == 0 && len(eventConditions) == 0 && !isTalentOnlySearch {
+		return &models.UniversalSearchResponse{Pagination: models.PaginationDetails{CurrentPage: params.Page, PageSize: params.Limit}}, nil
+	}
+	// Si es una búsqueda de talento pero no hay filtros, tampoco hay nada que hacer.
+	if isTalentOnlySearch && len(userConditions) == 0 {
 		return &models.UniversalSearchResponse{Pagination: models.PaginationDetails{CurrentPage: params.Page, PageSize: params.Limit}}, nil
 	}
 
@@ -151,8 +190,19 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 
 func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, eventQuery string, userArgs, eventArgs []interface{}, params models.UniversalSearchParams) ([]models.SearchResultProfile, []models.CommunityEvent, models.PaginationDetails, error) {
 	// Implementación de conteo y obtención de resultados paginados (lógica que ya teníamos)
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM ((%s) UNION ALL (%s)) as combined", userQuery, eventQuery)
-	countArgs := append(userArgs, eventArgs...)
+	var countQuery, fullQuery string
+	var countArgs, queryArgs []interface{}
+
+	if eventQuery != "" {
+		countQuery = fmt.Sprintf("SELECT COUNT(*) FROM ((%s) UNION ALL (%s)) as combined", userQuery, eventQuery)
+		countArgs = append(userArgs, eventArgs...)
+		fullQuery = fmt.Sprintf("(%s) UNION ALL (%s) ORDER BY CreatedAt DESC LIMIT ? OFFSET ?", userQuery, eventQuery)
+	} else {
+		countQuery = fmt.Sprintf("SELECT COUNT(*) FROM (%s) as combined", userQuery)
+		countArgs = userArgs
+		fullQuery = fmt.Sprintf("%s ORDER BY CreatedAt DESC LIMIT ? OFFSET ?", userQuery)
+	}
+
 	var totalItems int
 	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems); err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error counting combined results: %v", err)
@@ -170,9 +220,12 @@ func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, ev
 		return []models.SearchResultProfile{}, []models.CommunityEvent{}, pagination, nil
 	}
 
-	fullQuery := fmt.Sprintf("(%s) UNION ALL (%s) ORDER BY CreatedAt DESC LIMIT ? OFFSET ?", userQuery, eventQuery)
 	offset := (params.Page - 1) * params.Limit
-	queryArgs := append(append(userArgs, eventArgs...), params.Limit, offset)
+	if eventQuery != "" {
+		queryArgs = append(append(userArgs, eventArgs...), params.Limit, offset)
+	} else {
+		queryArgs = append(userArgs, params.Limit, offset)
+	}
 
 	rows, err := s.db.QueryContext(ctx, fullQuery, queryArgs...)
 	if err != nil {

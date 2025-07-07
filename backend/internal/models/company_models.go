@@ -37,7 +37,7 @@ type CompanyEvent struct {
 	ID          int       `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
-	EventDate   time.Time `json:"event_date"`
+	EventDate   NullTime  `json:"event_date,omitempty"`
 	Location    string    `json:"location"`
 	ImageURL    string    `json:"image_url,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`

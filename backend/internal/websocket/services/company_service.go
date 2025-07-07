@@ -52,7 +52,7 @@ func calculateCompanyStats(profile *models.CompleteCompanyProfile) {
 	totalEvents := len(profile.Events)
 	var upcomingEvents int
 	for _, event := range profile.Events {
-		if event.EventDate.After(time.Now()) {
+		if event.EventDate.Valid && event.EventDate.Time.After(time.Now()) {
 			upcomingEvents++
 		}
 	}

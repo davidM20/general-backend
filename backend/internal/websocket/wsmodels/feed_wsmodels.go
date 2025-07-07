@@ -41,6 +41,7 @@ type StudentFeedData struct {
 	Skills      []string `json:"skills"`
 	Description string   `json:"description"`
 	UserID      int64    `json:"userId"`
+	UserName    string   `json:"userName"`
 }
 
 // CompanyFeedData contiene los datos específicos para un item del feed de tipo "company".
@@ -51,6 +52,7 @@ type CompanyFeedData struct {
 	Location    string `json:"location"`
 	Description string `json:"description"`
 	UserID      int64  `json:"userId"`
+	UserName    string `json:"userName"`
 }
 
 // EventFeedData contiene los datos específicos para un item del feed de tipo "event".
@@ -62,9 +64,25 @@ type EventFeedData struct {
 	Location    string `json:"location"`
 	Image       string `json:"image"` // URL de la imagen del evento
 	Description string `json:"description"`
+	PostType    string `json:"postType"` // Diferenciar entre 'EVENTO', 'DESAFIO', 'ARTICULO', etc.
+	EventID     int64  `json:"eventId"`
+}
+
+// PaginationInfo contiene detalles sobre la paginación de una lista.
+type PaginationInfo struct {
+	TotalItems  int  `json:"totalItems"`
+	CurrentPage int  `json:"currentPage"`
+	HasMore     bool `json:"hasMore"`
 }
 
 // FeedListResponsePayload es el payload para la respuesta de la lista de feed.
 type FeedListResponsePayload struct {
-	Items []FeedItem `json:"items"`
+	Items      []FeedItem      `json:"items"`
+	Pagination *PaginationInfo `json:"pagination"`
+}
+
+// FeedItemViewRef es una referencia a un item del feed que ha sido visto.
+type FeedItemViewRef struct {
+	ItemType string `json:"itemType"` // 'user' o 'event'
+	ItemID   int64  `json:"itemId"`
 }

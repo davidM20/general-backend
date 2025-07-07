@@ -133,6 +133,10 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 			return handlers.HandleGetChatHistory(conn, subHandlerMessage)
 		},
 		"send_message": handleSendChatMessage,
+		"mark_read": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			sub := types.ClientToServerMessage{PID: msg.PID, Type: msg.Type, Payload: requestData.Data}
+			return handlers.HandleMarkMessageRead(conn, sub)
+		},
 	},
 	// Notification: Manejo de notificaciones
 	"notification": {
@@ -162,8 +166,13 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 	},
 	// Feed: Manejo de items del feed
 	"feed": {
-		"get_list": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
-			return handlers.HandleGetFeedList(conn, msg)
+		"get_list": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleGetFeedList(conn, subHandlerMessage)
 		},
 	},
 	// Search: Búsqueda de usuarios y empresas

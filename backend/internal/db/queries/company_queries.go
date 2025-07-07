@@ -72,10 +72,16 @@ func GetEventsForCompany(companyID int64) ([]models.CompanyEvent, error) {
 	for rows.Next() {
 		var event models.CompanyEvent
 		var imageUrl sql.NullString
-		if err := rows.Scan(&event.ID, &event.Title, &event.Description, &event.EventDate, &event.Location, &imageUrl, &event.CreatedAt, &event.UpdatedAt); err != nil {
+		var eventDate sql.NullTime
+		if err := rows.Scan(&event.ID, &event.Title, &event.Description, &eventDate, &event.Location, &imageUrl, &event.CreatedAt, &event.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("error al escanear evento: %w", err)
 		}
-		event.ImageURL = imageUrl.String
+		event.EventDate = models.NullTime{NullTime: eventDate}
+
+		if imageUrl.Valid {
+			event.ImageURL = imageUrl.String
+		}
+
 		events = append(events, event)
 	}
 	return events, nil

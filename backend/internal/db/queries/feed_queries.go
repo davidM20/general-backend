@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
@@ -76,167 +75,228 @@ NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
  * - Adaptar los datos al formato wsmodels.FeedItem.
  */
 
-// GetRecentUsersForFeed recupera usuarios (estudiantes y empresas) para el feed.
-// TODO: Añadir lógica de paginación/límite y ordenamiento más sofisticado.
-func GetRecentUsersForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
-	query := `
-		SELECT
-			u.Id,
-			u.FirstName,
-			u.LastName,
-			u.UserName,
-			u.Picture,
-			u.Summary, -- Usado como descripción para estudiantes y empresas
-			u.Sector,  -- Usado como industria para empresas
-			u.CompanyName,
-			u.Location,
-			u.RoleId,
-			u.CreatedAt, -- O u.UpdatedAt para ordenamiento más dinámico
-			COALESCE(r.Name, '') as RoleNameDb,
-			COALESCE(deg.DegreeName, '') as ExtractedDegreeName, -- Usando el nombre de columna correcto de la tabla Degree
-			COALESCE(uni.Name, '') as ExtractedUniversityName -- Usando el nombre de columna correcto de la tabla University
-		FROM User u
-		LEFT JOIN Role r ON u.RoleId = r.Id
-		LEFT JOIN Degree deg ON u.DegreeId = deg.Id
-		LEFT JOIN University uni ON u.UniversityId = uni.Id
-		WHERE u.StatusAuthorizedId = 1 AND (u.RoleId = ? OR u.RoleId = ?)
-		ORDER BY u.CreatedAt DESC
-		LIMIT ?;
-	`
-	logger.Debugf("GetRecentUsersForFeed", "Ejecutando consulta de usuarios para feed con RoleStudent: %d, RoleCompany: %d, Limit: %d", models.RoleStudent, models.RoleBusiness, limit)
-	rows, err := db.Query(query, models.RoleStudent, models.RoleBusiness, limit)
+func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels.FeedItem, int, error) {
+	// Primero, obtenemos el recuento total para la paginación, incluyendo todos los tipos de items.
+	countQuery := `
+    SELECT COUNT(*) FROM (
+        (
+            SELECT ce.Id FROM CommunityEvent ce
+            WHERE ce.PostType IN ('EVENTO', 'DESAFIO', 'ARTICULO')
+        )
+        UNION ALL
+        (
+            SELECT u.Id FROM User u
+            WHERE u.StatusAuthorizedId = 1 AND u.RoleId IN (?, ?, ?) -- 1:estudiante, 2:egresado, 3:empresa
+        )
+    ) as feed_items;
+    `
+	var totalItems int
+	// Los argumentos aquí (1, 2, 3) corresponden a los RoleId para estudiantes, egresados y empresas.
+	err := db.QueryRow(countQuery, 1, 2, 3).Scan(&totalItems)
 	if err != nil {
-		logger.Errorf("GetRecentUsersForFeed", "Error al consultar usuarios para feed: %v", err)
-		return nil, err
+		logger.Errorf("GetUnifiedFeed", "Error al contar los items del feed: %v", err)
+		return nil, 0, err
+	}
+
+	// Consulta principal para obtener los datos de la página actual.
+	query := `
+    (
+        -- Source 1: Community Events (Events, Challenges, Articles, etc.)
+        SELECT
+            'event' AS item_type,
+            ce.Id AS item_id,
+            ce.Title AS title,
+            ce.Description AS description,
+            ce.ImageUrl AS image_url,
+            ce.CreatedAt AS created_at,
+            ce.PostType AS sub_type,
+            -- User related fields (organizer/creator)
+            COALESCE(u.Id, 0) as user_id,
+            COALESCE(u.FirstName, '') as user_first_name,
+            COALESCE(u.LastName, '') as user_last_name,
+            COALESCE(u.CompanyName, ce.OrganizerCompanyName) as company_name,
+            COALESCE(u.Picture, ce.OrganizerLogoUrl) as user_avatar,
+            -- Columnas para hacer match con la query de usuarios
+            NULL as user_sector,
+            NULL as user_username,
+            -- Scoring: Prioritize newer content. Penalize heavily if already viewed.
+            (DATEDIFF(NOW(), ce.CreatedAt) * -0.6) + (IF(vi.UserId IS NULL, 0, -100)) AS relevance_score
+        FROM
+            CommunityEvent ce
+        LEFT JOIN User u ON ce.CreatedByUserId = u.Id
+        LEFT JOIN FeedItemView vi ON vi.UserId = ? AND vi.ItemType = 'COMMUNITY_EVENT' AND vi.ItemId = ce.Id
+        WHERE ce.PostType IN ('EVENTO', 'DESAFIO', 'ARTICULO')
+    )
+    UNION ALL
+    (
+        -- Source 2: Users (Students, Graduates, and Companies)
+        SELECT
+            CASE
+                WHEN u.RoleId IN (1, 2) THEN 'student'
+                WHEN u.RoleId = 3 THEN 'company'
+            END AS item_type,
+            u.Id AS item_id,
+            CASE
+                WHEN u.RoleId = 3 THEN u.CompanyName
+                ELSE CONCAT(u.FirstName, ' ', u.LastName)
+            END AS title,
+            u.Summary AS description,
+            u.Picture AS image_url,
+            u.CreatedAt AS created_at,
+            'profile' AS sub_type,
+            u.Id as user_id,
+            u.FirstName as user_first_name,
+            u.LastName as user_last_name,
+            u.CompanyName as company_name,
+            u.Picture as user_avatar,
+            u.Sector as user_sector,
+            u.UserName as user_username,
+            -- Scoring: Similar to events, but with slightly less weight on recency.
+            (DATEDIFF(NOW(), u.CreatedAt) * -0.5) + (IF(vi.UserId IS NULL, 0, -100)) AS relevance_score
+        FROM
+            User u
+        LEFT JOIN FeedItemView vi ON vi.UserId = ? AND vi.ItemType = 'USER' AND vi.ItemId = u.Id
+        WHERE u.StatusAuthorizedId = 1 AND u.RoleId IN (?, ?, ?) -- 1, 2, 3
+    )
+    -- Final Ordering and Pagination, applied to the whole UNION result.
+    ORDER BY relevance_score DESC, created_at DESC, item_id DESC
+    LIMIT ? OFFSET ?;
+    `
+
+	logger.Debugf("GetUnifiedFeed", "Ejecutando consulta unificada de feed para UserID %d con Limit: %d, Offset: %d", userID, limit, offset)
+
+	// Ejecuta la consulta.
+	rows, err := db.Query(query, userID, userID, 1, 2, 3, limit, offset)
+	if err != nil {
+		logger.Errorf("GetUnifiedFeed", "Error al ejecutar la consulta de feed unificado para UserID %d: %v", userID, err)
+		return nil, 0, err
 	}
 	defer rows.Close()
 
 	var feedItems []wsmodels.FeedItem
-	rowCount := 0
 	for rows.Next() {
-		rowCount++
-		var userID int64
-		var firstName, lastName, userName, picture, summary, sector, companyName, location, roleNameDbResult sql.NullString
-		var degreeNameStr, universityNameStr sql.NullString // Variables para escanear DegreeName y University.Name
-		var roleID sql.NullInt64
-		var createdAt time.Time
+		var itemType, title, description, imageUrl, subType, userFirstName, userLastName, companyName, userAvatar, userSector, userUsername sql.NullString
+		var itemID, userID sql.NullInt64
+		var createdAt sql.NullTime
+		var relevanceScore sql.NullFloat64
 
 		if err := rows.Scan(
-			&userID, &firstName, &lastName, &userName, &picture,
-			&summary, &sector, &companyName, &location,
-			&roleID, &createdAt, &roleNameDbResult,
-			&degreeNameStr, &universityNameStr, // Escaneando los nuevos campos
+			&itemType, &itemID, &title, &description, &imageUrl, &createdAt, &subType,
+			&userID, &userFirstName, &userLastName, &companyName, &userAvatar, &userSector, &userUsername,
+			&relevanceScore,
 		); err != nil {
-			logger.Errorf("GetRecentUsersForFeed", "Error al escanear fila de usuario (fila procesada #%d): %v", rowCount, err)
+			logger.Errorf("GetUnifiedFeed", "Error al escanear fila de feed unificado: %v", err)
 			continue
 		}
 
-		logger.Debugf("GetRecentUsersForFeed", "Fila de usuario escaneada (fila #%d): UserID: %d, UserName: %s, RoleID: %v, DegreeName: %s, UniversityName: %s", rowCount, userID, userName.String, roleID, degreeNameStr.String, universityNameStr.String)
-
-		itemType := ""
 		var data interface{}
+		idStr := ""
 
-		if roleID.Valid && roleID.Int64 == int64(models.RoleStudent) {
-			itemType = "student"
-			data = wsmodels.StudentFeedData{
-				Name:        firstName.String + " " + lastName.String,
-				Avatar:      picture.String,
-				Career:      degreeNameStr.String,     // Usando el valor escaneado
-				University:  universityNameStr.String, // Usando el valor escaneado
-				Skills:      []string{},               // TODO: Obtener skills si es necesario
-				Description: summary.String,
-				UserID:      userID,
-			}
-			logger.Debugf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) procesado como ESTUDIANTE.", userID, userName.String)
-		} else if roleID.Valid && roleID.Int64 == int64(models.RoleBusiness) {
-			itemType = "company"
-			data = wsmodels.CompanyFeedData{
-				Name:        companyName.String,
-				Logo:        picture.String,
-				Industry:    sector.String,
-				Location:    location.String,
-				Description: summary.String,
-				UserID:      userID,
-			}
-			logger.Debugf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) procesado como EMPRESA.", userID, userName.String)
-		} else {
-			logger.Warnf("GetRecentUsersForFeed", "Usuario ID %d (UserName: %s) con RoleID %v no coincide con estudiante (%d) o empresa (%d), omitiendo.", userID, userName.String, roleID, models.RoleStudent, models.RoleBusiness)
-			continue
-		}
-
-		feedItems = append(feedItems, wsmodels.FeedItem{
-			ID:        "user-" + userName.String,
-			Type:      itemType,
-			Timestamp: createdAt.Format(time.RFC3339),
-			Data:      data,
-		})
-	}
-
-	logger.Debugf("GetRecentUsersForFeed", "Procesadas %d filas de la consulta de usuarios. %d items de usuario añadidos al feed.", rowCount, len(feedItems))
-
-	if err = rows.Err(); err != nil {
-		logger.Errorf("GetRecentUsersForFeed", "Error después de iterar filas de usuario: %v", err)
-		return nil, err
-	}
-	return feedItems, nil
-}
-
-// GetRecentCommunityEventsForFeed recupera eventos comunitarios recientes para el feed.
-func GetRecentCommunityEventsForFeed(db *sql.DB, limit int) ([]wsmodels.FeedItem, error) {
-	query := `
-		SELECT
-			ce.Id,
-			ce.Title,
-			ce.Description,
-			ce.EventDate,
-			ce.Location,
-			ce.ImageUrl,
-			ce.OrganizerCompanyName,
-			COALESCE(u.Picture, '') as OrganizerLogo, -- Usar la imagen de perfil del usuario
-			ce.CreatedAt,
-			COALESCE(u.FirstName, '') as CreatorFirstName,
-			COALESCE(u.LastName, '') as CreatorLastName
-		FROM CommunityEvent ce
-		LEFT JOIN User u ON ce.CreatedByUserId = u.Id -- Para obtener nombre del creador si se desea
-		ORDER BY ce.CreatedAt DESC
-		LIMIT ?;
-	`
-	rows, err := db.Query(query, limit)
-	if err != nil {
-		logger.Errorf("GetRecentCommunityEventsForFeed", "Error al consultar eventos para feed: %v", err)
-		return nil, err
-	}
-	defer rows.Close()
-
-	var feedItems []wsmodels.FeedItem
-	for rows.Next() {
-		var eventID int64
-		var title, description, location, imageUrl, organizerCompany, organizerLogo, creatorFirstName, creatorLastName sql.NullString
-		var eventDate, createdAt time.Time
-
-		if err := rows.Scan(&eventID, &title, &description, &eventDate, &location, &imageUrl, &organizerCompany, &organizerLogo, &createdAt, &creatorFirstName, &creatorLastName); err != nil {
-			logger.Errorf("GetRecentCommunityEventsForFeed", "Error al escanear fila de evento: %v", err)
-			continue
-		}
-
-		feedItems = append(feedItems, wsmodels.FeedItem{
-			ID:        "event-" + strconv.FormatInt(eventID, 10),
-			Type:      "event",
-			Timestamp: createdAt.Format(time.RFC3339),
-			Data: wsmodels.EventFeedData{
+		switch itemType.String {
+		case "event":
+			idStr = "event-" + strconv.FormatInt(itemID.Int64, 10)
+			data = wsmodels.EventFeedData{
 				Title:       title.String,
-				Company:     organizerCompany.String,
-				CompanyLogo: organizerLogo.String, // Esto ahora será u.Picture
-				Date:        eventDate.Format("Jan 02, 2006"),
-				Location:    location.String,
+				Company:     companyName.String,
+				CompanyLogo: userAvatar.String,
+				Date:        formatEventDate(createdAt),
+				Location:    companyName.String, // Asumiendo que el evento ocurre en la ubicación de la empresa
 				Image:       imageUrl.String,
 				Description: description.String,
-			},
-		})
+				PostType:    subType.String,
+				EventID:     itemID.Int64,
+			}
+		case "student":
+			idStr = "user-" + strconv.FormatInt(itemID.Int64, 10)
+			data = wsmodels.StudentFeedData{
+				Name:        title.String,
+				Avatar:      userAvatar.String,
+				Career:      "Carrera por definir",     // Placeholder
+				University:  "Universidad por definir", // Placeholder
+				Skills:      []string{},
+				Description: description.String,
+				UserID:      itemID.Int64,
+				UserName:    userUsername.String,
+			}
+		case "company":
+			idStr = "user-" + strconv.FormatInt(itemID.Int64, 10)
+			data = wsmodels.CompanyFeedData{
+				Name:        title.String,
+				Logo:        userAvatar.String,
+				Industry:    userSector.String,
+				Location:    companyName.String, // Asumiendo que company_name es la ubicación
+				Description: description.String,
+				UserID:      itemID.Int64,
+				UserName:    userUsername.String,
+			}
+		default:
+			logger.Warnf("GetUnifiedFeed", "Tipo de item desconocido encontrado: %s", itemType.String)
+			continue
+		}
+
+		feedItem := wsmodels.FeedItem{
+			ID:        idStr,
+			Type:      itemType.String,
+			Timestamp: createdAt.Time.Format(time.RFC3339),
+			Data:      data,
+		}
+		feedItems = append(feedItems, feedItem)
 	}
+
 	if err = rows.Err(); err != nil {
-		logger.Errorf("GetRecentCommunityEventsForFeed", "Error después de iterar filas de evento: %v", err)
-		return nil, err
+		logger.Errorf("GetUnifiedFeed", "Error durante el recorrido de las filas del feed: %v", err)
+		return nil, 0, err
 	}
-	return feedItems, nil
+
+	logger.Successf("GetUnifiedFeed", "Procesados %d items del feed unificado para el usuario %d", len(feedItems), userID)
+	return feedItems, totalItems, nil
+}
+
+func formatEventDate(t sql.NullTime) string {
+	if t.Valid {
+		return t.Time.Format("Jan 02, 2006")
+	}
+	return "" // Return empty string if date is not available
+}
+
+// MarkFeedItemsViewed inserta registros de items vistos por un usuario en la BD.
+// Utiliza INSERT IGNORE para evitar errores en caso de duplicados.
+func MarkFeedItemsViewed(db *sql.DB, userID int64, items []wsmodels.FeedItemViewRef) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// Preparamos una transacción para asegurar que todas las inserciones se completen o ninguna lo haga.
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // Rollback si algo sale mal
+
+	stmt, err := tx.Prepare("INSERT IGNORE INTO FeedItemView (UserId, ItemType, ItemId, ViewedAt) VALUES (?, ?, ?, NOW())")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, item := range items {
+		// Normalizar el ItemType para que coincida con el ENUM de la BD
+		var dbItemType string
+		switch item.ItemType {
+		case "student", "company", "user":
+			dbItemType = "USER"
+		case "event":
+			dbItemType = "COMMUNITY_EVENT"
+		default:
+			logger.Warnf("MarkFeedItemsViewed", "ItemType desconocido '%s' para ItemID %d, omitiendo.", item.ItemType, item.ItemID)
+			continue
+		}
+
+		if _, err := stmt.Exec(userID, dbItemType, item.ItemID); err != nil {
+			logger.Errorf("MarkFeedItemsViewed", "Error ejecutando INSERT para UserID %d, ItemID %d: %v", userID, item.ItemID, err)
+			// Continuamos para intentar insertar los demás
+		}
+	}
+
+	return tx.Commit()
 }

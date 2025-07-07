@@ -2,8 +2,6 @@ package services
 
 import (
 	"database/sql"
-	"sort"
-	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
@@ -46,53 +44,41 @@ func NewFeedService(db *sql.DB) *FeedService {
 	return &FeedService{DB: db}
 }
 
-// GetFeedItems obtiene la lista de items para el feed.
-func (s *FeedService) GetFeedItems(userID int64) ([]wsmodels.FeedItem, error) {
-	logger.Infof("FEED_SERVICE", "Usuario %d solicitó items del feed.", userID)
+// GetFeedItems obtiene una lista paginada de items para el feed de un usuario.
+// Ahora devuelve un payload completo que incluye la información de paginación.
+func (s *FeedService) GetFeedItems(userID int64, page, limit int) (*wsmodels.FeedListResponsePayload, error) {
+	logger.Infof("FEED_SERVICE", "Usuario %d solicitó items del feed. Página: %d, Límite: %d", userID, page, limit)
 
-	// Definir límites para las consultas (pueden ser configurables)
-	userLimit := 30
-	eventLimit := 30
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 10 // Límite por defecto
+	}
+	offset := (page - 1) * limit
 
-	var allFeedItems []wsmodels.FeedItem
-
-	// Obtener usuarios recientes (estudiantes y empresas)
-	userFeedItems, err := queries.GetRecentUsersForFeed(s.DB, userLimit)
+	// La nueva función GetUnifiedFeed ya combina y ordena los items en la BD
+	// y además devuelve el conteo total de items.
+	feedItems, totalItems, err := queries.GetUnifiedFeed(s.DB, userID, limit, offset)
 	if err != nil {
-		logger.Errorf("FEED_SERVICE", "Error obteniendo usuarios para el feed: %v", err)
-		// Podríamos decidir devolver un feed parcial o un error completo.
-		// Por ahora, continuamos y solo logueamos el error.
-	} else {
-		allFeedItems = append(allFeedItems, userFeedItems...)
+		logger.Errorf("FEED_SERVICE", "Error obteniendo el feed unificado para el UserID %d: %v", userID, err)
+		return nil, err
 	}
 
-	// Obtener eventos comunitarios recientes
-	communityEventFeedItems, err := queries.GetRecentCommunityEventsForFeed(s.DB, eventLimit)
-	if err != nil {
-		logger.Errorf("FEED_SERVICE", "Error obteniendo eventos comunitarios para el feed: %v", err)
-		// Similar al manejo de errores de usuarios.
-	} else {
-		allFeedItems = append(allFeedItems, communityEventFeedItems...)
+	// Calculamos si hay más páginas de forma fiable.
+	hasMore := (offset + len(feedItems)) < totalItems
+
+	pagination := &wsmodels.PaginationInfo{
+		TotalItems:  totalItems,
+		CurrentPage: page,
+		HasMore:     hasMore,
 	}
 
-	// Ordenar todos los items por Timestamp (del más reciente al más antiguo)
-	// Asume que Timestamp es parseable a time.Time. RFC3339 es parseable.
-	sort.Slice(allFeedItems, func(i, j int) bool {
-		ti, erri := time.Parse(time.RFC3339, allFeedItems[i].Timestamp)
-		tj, errj := time.Parse(time.RFC3339, allFeedItems[j].Timestamp)
-		// Si hay error al parsear, esos items van al final o se manejan como se prefiera.
-		if erri != nil || errj != nil {
-			return erri == nil // Pone los no parseables (errj != nil) al final
-		}
-		return ti.After(tj) // ti > tj para orden descendente
-	})
+	response := &wsmodels.FeedListResponsePayload{
+		Items:      feedItems,
+		Pagination: pagination,
+	}
 
-	// TODO: Aplicar un límite general al feed combinado si es necesario, ej. los 20 más recientes.
-	// maxTotalFeedItems := 20
-	// if len(allFeedItems) > maxTotalFeedItems {
-	// 	allFeedItems = allFeedItems[:maxTotalFeedItems]
-	// }
-
-	logger.Successf("FEED_SERVICE", "Devueltos %d items del feed para el usuario %d.", len(allFeedItems), userID)
-	return allFeedItems, nil
+	logger.Successf("FEED_SERVICE", "Devueltos %d de %d items del feed para el usuario %d. Hay más: %t", len(feedItems), totalItems, userID, hasMore)
+	return response, nil
 }

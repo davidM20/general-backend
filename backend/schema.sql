@@ -445,9 +445,8 @@ FOREIGN KEY (EventId) REFERENCES Event(Id)
 
 CREATE TABLE IF NOT EXISTS CommunityEvent (
     Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-
     -- Define qué tipo de publicación es, incluyendo 'DESAFIO'.
-    PostType ENUM('EVENTO', 'NOTICIA', 'ARTICULO', 'ANUNCIO', 'MULTIMEDIA', 'DESAFIO') NOT NULL DEFAULT 'EVENTO',
+    PostType ENUM('EVENTO', 'NOTICIA', 'ARTICULO', 'ANUNCIO', 'MULTIMEDIA', 'DESAFIO', 'DISCUSION') NOT NULL DEFAULT 'EVENTO',
 
     Title VARCHAR(255) NOT NULL,
     Description TEXT,
@@ -670,6 +669,21 @@ ADD COLUMN dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '' AFTER dmeta_tit
 
 ALTER TABLE CommunityEvent
 ADD INDEX idx_community_event_phonetic_title (dmeta_title_primary, dmeta_title_secondary);
+
+
+CREATE TABLE IF NOT EXISTS FeedItemView (
+    UserId BIGINT NOT NULL,
+    -- ItemType distingue entre 'USER' (para perfiles de estudiante/empresa) y 'COMMUNITY_EVENT'
+    ItemType ENUM('USER', 'COMMUNITY_EVENT') NOT NULL,
+    ItemId BIGINT NOT NULL,
+    ViewedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Un usuario solo ve un item una vez. La PK previene duplicados.
+    PRIMARY KEY (UserId, ItemType, ItemId),
+    FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE
+);
+
+-- Índice para permitir la limpieza eficiente de registros de vistas antiguos si es necesario.
+CREATE INDEX idx_feeditemview_viewedat ON FeedItemView(ViewedAt);
 
 
 CREATE TABLE IF NOT EXISTS JobApplication (

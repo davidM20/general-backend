@@ -37,6 +37,7 @@ func (h *SearchHandler) SearchTalent(w http.ResponseWriter, r *http.Request) {
 
 	params := models.UniversalSearchParams{
 		Query:      queryValues.Get("q"),
+		Role:       queryValues.Get("role"),
 		Career:     queryValues.Get("career"),
 		University: queryValues.Get("university"),
 		Location:   queryValues.Get("location"),

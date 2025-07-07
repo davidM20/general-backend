@@ -171,11 +171,12 @@ func GetCommunityEventsByUserIDPaginated(db *sql.DB, userID int64, limit, offset
 	for rows.Next() {
 		var event models.CommunityEvent
 		var tagsJSON sql.NullString
+		var eventDate sql.NullTime
 		err := rows.Scan(
 			&event.Id,
 			&event.Title,
 			&event.Description,
-			&event.EventDate,
+			&eventDate,
 			&event.Location,
 			&event.Capacity,
 			&event.Price,
@@ -192,6 +193,9 @@ func GetCommunityEventsByUserIDPaginated(db *sql.DB, userID int64, limit, offset
 			logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error scanning community event row for user ID %d: %v", userID, err)
 			continue // O podríamos devolver el error y detener el proceso
 		}
+
+		// Asignar EventDate respetando nulidad
+		event.EventDate = models.NullTime{NullTime: eventDate}
 
 		// Deserializar las etiquetas si no son nulas
 		if tagsJSON.Valid {
@@ -397,7 +401,7 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 	countQuery := "SELECT COUNT(*) FROM CommunityEvent WHERE CreatedByUserId = ?"
 	err := db.QueryRow(countQuery, userID).Scan(&totalEvents)
 	if err != nil {
-		logger.Errorf("QUERIES", "Error al contar los eventos para el usuario %d: %v", userID, err)
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error al contar los eventos para el usuario %d: %v", userID, err)
 		return nil, err
 	}
 
@@ -422,7 +426,7 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 
 	rows, err := db.Query(query, userID, pageSize, offset)
 	if err != nil {
-		logger.Errorf("QUERIES", "Error al obtener la lista de eventos para el usuario %d: %v", userID, err)
+		logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error al obtener la lista de eventos para el usuario %d: %v", userID, err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -430,6 +434,8 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 	var events []models.CommunityEvent
 	for rows.Next() {
 		var event models.CommunityEvent
+		var tagsJSON sql.NullString // manejar columna JSON nullable
+		var eventDate sql.NullTime
 		err := rows.Scan(
 			&event.Id,
 			&event.PostType,
@@ -440,11 +446,11 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 			&event.LinkPreviewTitle,
 			&event.LinkPreviewDescription,
 			&event.LinkPreviewImage,
-			&event.EventDate,
+			&eventDate,
 			&event.Location,
 			&event.Capacity,
 			&event.Price,
-			&event.Tags,
+			&tagsJSON,
 			&event.OrganizerCompanyName,
 			&event.OrganizerUserId,
 			&event.OrganizerLogoUrl,
@@ -456,6 +462,15 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 			logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error scanning community event row for user ID %d: %v", userID, err)
 			continue
 		}
+
+		// Asignar EventDate respetando nulidad
+		event.EventDate = models.NullTime{NullTime: eventDate}
+
+		// Si hay tags, deserializarlos en json.RawMessage
+		if tagsJSON.Valid {
+			event.Tags = json.RawMessage(tagsJSON.String)
+		}
+
 		events = append(events, event)
 	}
 
