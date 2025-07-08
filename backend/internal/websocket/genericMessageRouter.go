@@ -154,14 +154,29 @@ var actionHandlers = map[string]map[string]ResourceHandler{
 	},
 	// Friend: Manejo de solicitudes de amistad
 	"friend": {
-		"accept_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
-			return handlers.HandleAcceptFriendRequest(conn, msg)
+		"accept_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleAcceptFriendRequest(conn, subHandlerMessage)
 		},
-		"reject_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
-			return handlers.HandleRejectFriendRequest(conn, msg)
+		"reject_request": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleRejectFriendRequest(conn, subHandlerMessage)
 		},
-		"contact": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, _ DataRequestPayload) error {
-			return handlers.HandleContactRequest(conn, msg)
+		"contact": func(conn *customws.Connection[wsmodels.WsUserData], msg types.ClientToServerMessage, requestData DataRequestPayload) error {
+			subHandlerMessage := types.ClientToServerMessage{
+				PID:     msg.PID,
+				Type:    msg.Type,
+				Payload: requestData.Data,
+			}
+			return handlers.HandleContactRequest(conn, subHandlerMessage)
 		},
 	},
 	// Feed: Manejo de items del feed

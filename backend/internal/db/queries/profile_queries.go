@@ -540,5 +540,23 @@ func safeNullInt64(ni sql.NullInt64) int64 {
 	if ni.Valid {
 		return ni.Int64
 	}
-	return 0 // O el valor por defecto que consideres apropiado si NULL
+	return 0
+}
+
+func GetUserPicture(userID int64) (string, error) {
+	var picture sql.NullString
+	query := "SELECT Picture FROM User WHERE Id = ?"
+	err := DB.QueryRow(query, userID).Scan(&picture)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("usuario con ID %d no encontrado", userID)
+		}
+		return "", fmt.Errorf("error al obtener la foto de perfil: %w", err)
+	}
+
+	if !picture.Valid || picture.String == "" {
+		return "", fmt.Errorf("el usuario con ID %d no tiene foto de perfil", userID)
+	}
+
+	return picture.String, nil
 }

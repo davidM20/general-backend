@@ -1182,17 +1182,6 @@ func GetNotificationById(notificationId string) (*models.Notification, error) {
 	return &notification, nil
 }
 
-func CreateContact(user1ID, user2ID int64, chatID string, status string) error {
-	query := "INSERT INTO Contact (User1Id, User2Id, Status, ChatId) VALUES (?, ?, ?, ?)"
-	_, err := DB.Exec(query, user1ID, user2ID, status, chatID)
-	if err != nil {
-		logger.Errorf("QUERY", "Error al crear contacto entre %d y %d: %v", user1ID, user2ID, err)
-		return fmt.Errorf("no se pudo crear el contacto: %w", err)
-	}
-	logger.Successf("QUERY", "Contacto creado exitosamente entre %d y %d con estado '%s'", user1ID, user2ID, status)
-	return nil
-}
-
 // GetChatList recupera la lista de información de chat para un usuario con una única consulta optimizada.
 func GetChatList(userID int64) ([]models.ChatInfoQueryResult, error) {
 	query := `

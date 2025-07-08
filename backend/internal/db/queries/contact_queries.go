@@ -1,5 +1,12 @@
 package queries
 
+import (
+	"fmt"
+
+	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
+)
+
 /*
 Package queries proporciona un lugar centralizado para toda la lógica de acceso a la base de datos.
 Este archivo contiene funciones para interactuar con las tablas de la base de datos.
@@ -47,3 +54,18 @@ NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
   - Considera las implicaciones de rendimiento. Usa `JOIN`s con criterio y añade cláusulas `LIMIT` donde sea aplicable.
   - Asegúrate de que tu consulta devuelva solo las columnas necesarias.
 */
+
+func GetContact(contactID int) (*models.Contact, error) {
+	return nil, nil
+}
+
+func CreateContact(user1ID, user2ID int64, chatID string, status string) error {
+	query := "INSERT INTO Contact (User1Id, User2Id, Status, ChatId) VALUES (?, ?, ?, ?)"
+	_, err := DB.Exec(query, user1ID, user2ID, status, chatID)
+	if err != nil {
+		logger.Errorf("QUERY", "Error al crear contacto entre %d y %d: %v", user1ID, user2ID, err)
+		return fmt.Errorf("no se pudo crear el contacto: %w", err)
+	}
+	logger.Successf("QUERY", "Contacto creado exitosamente entre %d y %d con estado '%s'", user1ID, user2ID, status)
+	return nil
+}

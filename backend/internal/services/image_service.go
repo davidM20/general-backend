@@ -128,7 +128,7 @@ func (s *ImageUploadService) ProcessAndUploadImage(ctx context.Context, userID i
 	if err != nil {
 		return nil, fmt.Errorf("error subiendo original WebP a GCS: %w", err)
 	}
-	originalGCSUrl = fmt.Sprintf("https://storage.googleapis.com/%s/%s", s.cfg.GCSBucketName, originalFileName)
+	originalGCSUrl = originalFileName
 	_, err = queries.InsertMultimedia(s.db, &models.Multimedia{
 		Id:        uuid.New().String(),
 		Type:      "image",
@@ -212,6 +212,16 @@ func (s *ImageUploadService) UpdateUserProfilePicture(ctx context.Context, userI
 	}
 	logger.Infof("UpdateUserProfilePicture", "Foto de perfil actualizada exitosamente para el usuario %d con el archivo %s", userID, pictureFileName)
 	return nil
+}
+
+// GetUserProfilePictureFilename obtiene el nombre del archivo de la foto de perfil de un usuario.
+func (s *ImageUploadService) GetUserProfilePictureFilename(ctx context.Context, userID int64) (string, error) {
+	fileName, err := queries.GetUserPicture(userID)
+	if err != nil {
+		logger.Errorf("GetUserProfilePictureFilename.Service", "Error obteniendo el nombre del archivo de la foto de perfil para el usuario %d: %v", userID, err)
+		return "", err
+	}
+	return fileName, nil
 }
 
 func (s *ImageUploadService) convertToWebP(img image.Image) ([]byte, error) {

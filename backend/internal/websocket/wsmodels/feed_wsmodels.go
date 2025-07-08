@@ -66,6 +66,7 @@ type EventFeedData struct {
 	Description string `json:"description"`
 	PostType    string `json:"postType"` // Diferenciar entre 'EVENTO', 'DESAFIO', 'ARTICULO', etc.
 	EventID     int64  `json:"eventId"`
+	UserID      int64  `json:"userId"`
 }
 
 // PaginationInfo contiene detalles sobre la paginación de una lista.

@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
-
-	"fmt"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/auth"
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
@@ -139,6 +139,89 @@ func (h *ImageHandler) UpdateProfilePicture(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// ViewUserProfilePicture maneja la solicitud GET para ver la foto de perfil de un usuario.
+// La autenticación la maneja el middleware.
+func (h *ImageHandler) ViewUserProfilePicture(w http.ResponseWriter, r *http.Request) {
+	// 1. Obtener userID del path
+	vars := mux.Vars(r)
+	userIDStr, ok := vars["userID"]
+	if !ok {
+		logger.Warn("ViewUserProfilePicture.Params", "userID no encontrado en la ruta.")
+		http.Error(w, `{"error": "Falta el ID de usuario en la ruta."}`, http.StatusBadRequest)
+		return
+	}
+
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
+	if err != nil {
+		logger.Warnf("ViewUserProfilePicture.Params", "userID inválido en la ruta: %s", userIDStr)
+		http.Error(w, `{"error": "ID de usuario inválido."}`, http.StatusBadRequest)
+		return
+	}
+
+	// 2. Obtener el nombre del archivo de la foto de perfil desde el servicio
+	filename, err := h.imageService.GetUserProfilePictureFilename(r.Context(), userID)
+	if err != nil {
+		logger.Errorf("ViewUserProfilePicture.ServiceCall", "Error obteniendo nombre de archivo para usuario %d: %v", userID, err)
+		if strings.Contains(err.Error(), "no encontrado") {
+			http.Error(w, `{"error": "Usuario no encontrado."}`, http.StatusNotFound)
+		} else if strings.Contains(err.Error(), "no tiene foto de perfil") {
+			http.Error(w, `{"error": "El usuario no tiene foto de perfil."}`, http.StatusNotFound)
+		} else {
+			http.Error(w, `{"error": "Error interno al obtener la información de la imagen."}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// 3. Servir la imagen (lógica similar a ViewImage pero sin validación de token aquí)
+	if h.cfg.GCSBucketName == "" {
+		logger.Error("ViewUserProfilePicture.Config", "El nombre del bucket GCS no está configurado.")
+		http.Error(w, `{"error": "Error de configuración del servidor."}`, http.StatusInternalServerError)
+		return
+	}
+
+	gcsURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", h.cfg.GCSBucketName, filename)
+
+	client := &http.Client{}
+	req, err := http.NewRequestWithContext(r.Context(), "GET", gcsURL, nil)
+	if err != nil {
+		logger.Errorf("ViewUserProfilePicture.GCSRequestError", "Error creando request para GCS %s: %v", gcsURL, err)
+		http.Error(w, `{"error": "Error al solicitar la imagen."}`, http.StatusInternalServerError)
+		return
+	}
+
+	gcsResponse, err := client.Do(req)
+	if err != nil {
+		logger.Errorf("ViewUserProfilePicture.GCSDownloadError", "Error descargando imagen de GCS %s: %v", gcsURL, err)
+		http.Error(w, `{"error": "No se pudo obtener la imagen del almacenamiento."}`, http.StatusBadGateway)
+		return
+	}
+	defer gcsResponse.Body.Close()
+
+	if gcsResponse.StatusCode != http.StatusOK {
+		logger.Warnf("ViewUserProfilePicture.GCSStatusError", "GCS devolvió estado no OK (%d) para %s", gcsResponse.StatusCode, gcsURL)
+		if gcsResponse.StatusCode == http.StatusNotFound {
+			http.Error(w, `{"error": "Imagen no encontrada en el almacenamiento."}`, http.StatusNotFound)
+		} else {
+			http.Error(w, `{"error": "Error al obtener la imagen del almacenamiento."}`, http.StatusBadGateway)
+		}
+		return
+	}
+
+	contentType := gcsResponse.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	if gcsResponse.ContentLength > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", gcsResponse.ContentLength))
+	}
+
+	_, err = io.Copy(w, gcsResponse.Body)
+	if err != nil {
+		logger.Errorf("ViewUserProfilePicture.ResponseWriteError", "Error escribiendo imagen al cliente: %v", err)
+	}
 }
 
 // ViewImage maneja la solicitud GET para ver una imagen, autenticando con token en query param.

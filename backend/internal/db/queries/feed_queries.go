@@ -81,7 +81,6 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
     SELECT COUNT(*) FROM (
         (
             SELECT ce.Id FROM CommunityEvent ce
-            WHERE ce.PostType IN ('EVENTO', 'DESAFIO', 'ARTICULO')
         )
         UNION ALL
         (
@@ -111,7 +110,7 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
             ce.CreatedAt AS created_at,
             ce.PostType AS sub_type,
             -- User related fields (organizer/creator)
-            COALESCE(u.Id, 0) as user_id,
+            COALESCE(u.Id, ce.OrganizerUserId, ce.CreatedByUserId) as user_id,
             COALESCE(u.FirstName, '') as user_first_name,
             COALESCE(u.LastName, '') as user_last_name,
             COALESCE(u.CompanyName, ce.OrganizerCompanyName) as company_name,
@@ -125,7 +124,6 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
             CommunityEvent ce
         LEFT JOIN User u ON ce.CreatedByUserId = u.Id
         LEFT JOIN FeedItemView vi ON vi.UserId = ? AND vi.ItemType = 'COMMUNITY_EVENT' AND vi.ItemId = ce.Id
-        WHERE ce.PostType IN ('EVENTO', 'DESAFIO', 'ARTICULO')
     )
     UNION ALL
     (
@@ -195,6 +193,10 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
 		switch itemType.String {
 		case "event":
 			idStr = "event-" + strconv.FormatInt(itemID.Int64, 10)
+			uid := int64(-1)
+			if userID.Valid {
+				uid = userID.Int64
+			}
 			data = wsmodels.EventFeedData{
 				Title:       title.String,
 				Company:     companyName.String,
@@ -205,6 +207,7 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
 				Description: description.String,
 				PostType:    subType.String,
 				EventID:     itemID.Int64,
+				UserID:      uid,
 			}
 		case "student":
 			idStr = "user-" + strconv.FormatInt(itemID.Int64, 10)

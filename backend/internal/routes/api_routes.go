@@ -82,9 +82,10 @@ const (
 	ResetPasswordComplete = ResetPasswordPath + "/complete"
 
 	// Rutas de usuarios
-	UsersPath          = "/users"
-	UsersMePath        = UsersPath + "/me"
-	ProfilePicturePath = UsersMePath + "/picture"
+	UsersPath                  = "/users"
+	UsersMePath                = UsersPath + "/me"
+	ProfilePicturePath         = UsersMePath + "/picture"
+	UserProfilePictureViewPath = UsersPath + "/{userID:[0-9]+}/picture"
 
 	// Rutas de empresas
 	EnterprisesPath   = "/enterprises"
@@ -167,6 +168,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	// Rutas de usuarios
 	setupProtectedRoute(protected, UsersMePath, handlers.userHandler.GetMyProfile, http.MethodGet)
 	setupProtectedRoute(protected, ProfilePicturePath, handlers.imageHandler.UpdateProfilePicture, http.MethodPost)
+	setupProtectedRoute(protected, UserProfilePictureViewPath, handlers.imageHandler.ViewUserProfilePicture, http.MethodGet)
 
 	// Rutas de empresas
 	setupProtectedRoute(protected, EnterprisesMePath, handlers.enterpriseHandler.UpdateEnterpriseProfile, http.MethodPut)
