@@ -209,13 +209,7 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 				PID:        manager.Callbacks().GeneratePID(),
 			}
 
-			fromConn, found := manager.GetConnection(userID)
-			if !found {
-				logger.Errorf("SERVICE_CHAT", "No se encontró conexión para el remitente UserID %d", userID)
-				return messageToSend, fmt.Errorf("error: remitente no conectado")
-			}
-
-			if err := manager.HandlePeerToPeerMessage(fromConn, recipientUserID, serverMessage); err != nil {
+			if err := manager.SendMessageToUser(recipientUserID, serverMessage); err != nil {
 				logger.Errorf("SERVICE_CHAT", "Error enviando mensaje (ID: %s) a UserID %d: %v", messageToSend.Id, recipientUserID, err)
 			} else {
 				logger.Successf("SERVICE_CHAT", "Mensaje (ID: %s) enviado exitosamente a UserID %d", messageToSend.Id, recipientUserID)
@@ -240,12 +234,6 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 			PID:        manager.Callbacks().GeneratePID(),
 		}
 
-		fromConn, found := manager.GetConnection(userID)
-		if !found {
-			logger.Errorf("SERVICE_CHAT", "No se encontró conexión para el remitente UserID %d", userID)
-			return messageToSend, fmt.Errorf("error: remitente no conectado")
-		}
-
 		for _, member := range groupMembers {
 			// No enviar el mensaje al propio remitente.
 			if member.UserID == userID {
@@ -253,13 +241,11 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 			}
 
 			if manager.IsUserOnline(member.UserID) {
-				if err := manager.HandlePeerToPeerMessage(fromConn, member.UserID, serverMessage); err != nil {
-					logger.Errorf("SERVICE_CHAT", "Error enviando mensaje de grupo (ID: %s) a UserID %d: %v", messageToSend.Id, member.UserID, err)
+				if err := manager.SendMessageToUser(member.UserID, serverMessage); err != nil {
+					logger.Errorf("SERVICE_CHAT", "Error enviando mensaje de grupo (ID: %s) a miembro %d: %v", messageToSend.Id, member.UserID, err)
 				} else {
-					logger.Successf("SERVICE_CHAT", "Mensaje de grupo (ID: %s) enviado exitosamente a UserID %d", messageToSend.Id, member.UserID)
+					logger.Successf("SERVICE_CHAT", "Mensaje de grupo (ID: %s) enviado exitosamente a miembro %d", messageToSend.Id, member.UserID)
 				}
-			} else {
-				logger.Infof("SERVICE_CHAT", "Miembro del grupo UserID %d no está en línea para recibir mensaje (ID: %s)", member.UserID, messageToSend.Id)
 			}
 		}
 	}
@@ -393,60 +379,43 @@ func GetChatParticipants(chatID string) (int64, int64, error) {
 	return contact.User1Id, contact.User2Id, nil
 }
 
-// MarkMessageAsRead marca un mensaje específico como leído y notifica al remitente si está en línea.
-func MarkMessageAsRead(userID int64, messageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
+func MarkMessageAsRead(userID int64, messageID string, manager *customws.ConnectionManager[wsmodels.WsUserData]) (int64, error) {
 	if chatDB == nil {
-		return errors.New("chat service no inicializado con conexión a BD")
+		return 0, errors.New("servicio de chat no inicializado")
 	}
 
-	// Actualizar estado
-	res, err := chatDB.Exec(`UPDATE Message SET Status = 'read' WHERE Id = ?`, messageID)
+	// 1. Obtener el SenderId del mensaje para saber a quién notificar.
+	var senderID int64
+	var currentStatus string
+	queryGet := `SELECT SenderId, Status FROM Message WHERE Id = ?`
+	err := chatDB.QueryRow(queryGet, messageID).Scan(&senderID, &currentStatus)
 	if err != nil {
-		logger.Errorf("SERVICE_CHAT", "Error actualizando estado de mensaje %s: %v", messageID, err)
-		return err
-	}
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
-		// Puede que ya estuviera en 'read' o que no exista
-		var existingStatus string
-		err := chatDB.QueryRow(`SELECT Status FROM Message WHERE Id = ?`, messageID).Scan(&existingStatus)
 		if err == sql.ErrNoRows {
-			return errors.New("mensaje no encontrado")
+			return 0, fmt.Errorf("mensaje con ID %s no encontrado", messageID)
 		}
-		if err != nil {
-			return err
-		}
-		// Si ya estaba leído, lo consideramos éxito idempotente
-		if existingStatus == "read" {
-			logger.Debugf("SERVICE_CHAT", "Mensaje %s ya estaba marcado como leído", messageID)
-			return nil
-		}
-		return errors.New("no se pudo marcar como leído")
+		return 0, fmt.Errorf("error obteniendo el remitente del mensaje %s: %w", messageID, err)
 	}
 
-	// Opcional: notificar al remitente si está en línea
-	if manager != nil {
-		// Obtener info básica
-		var senderID int64
-		err := chatDB.QueryRow(`SELECT SenderId FROM Message WHERE Id = ?`, messageID).Scan(&senderID)
-		if err == nil && manager.IsUserOnline(senderID) {
-			ack := customwsTypes.ServerToClientMessage{
-				Type:       "message_read",
-				FromUserID: userID,
-				Payload: map[string]interface{}{
-					"messageId": messageID,
-				},
-				PID: manager.Callbacks().GeneratePID(),
-			}
-			fromConn, ok := manager.GetConnection(userID)
-			if ok {
-				_ = manager.HandlePeerToPeerMessage(fromConn, senderID, ack)
-			}
-		}
+	// 2. Actualizar el estado del mensaje a 'read' solo si no lo está ya.
+	// Esto evita notificaciones y escrituras innecesarias.
+	if currentStatus == "read" {
+		return senderID, nil // El mensaje ya está leído, no hacer nada más.
 	}
 
-	logger.Infof("SERVICE_CHAT", "Mensaje %s marcado como leído por UserID %d", messageID, userID)
-	return nil
+	queryUpdate := `UPDATE Message SET Status = 'read' WHERE Id = ?`
+	result, err := chatDB.Exec(queryUpdate, messageID)
+	if err != nil {
+		return 0, fmt.Errorf("error actualizando el estado del mensaje %s a 'read': %w", messageID, err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		// Esto podría ocurrir si el mensaje fue eliminado justo después de leerlo.
+		return 0, fmt.Errorf("no se actualizó ninguna fila para el mensaje ID %s (puede que no exista)", messageID)
+	}
+
+	// 3. Devolver el ID del remitente para que el handler pueda notificarle.
+	return senderID, nil
 }
 
 // TODO: Implementar GetMessagesForChat, MarkMessagesAsRead, SetUserTypingStatus

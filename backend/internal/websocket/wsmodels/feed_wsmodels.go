@@ -34,14 +34,15 @@ type FeedItem struct {
 
 // StudentFeedData contiene los datos específicos para un item del feed de tipo "student".
 type StudentFeedData struct {
-	Name        string   `json:"name"`
-	Avatar      string   `json:"avatar"` // URL
-	Career      string   `json:"career"`
-	University  string   `json:"university"`
-	Skills      []string `json:"skills"`
-	Description string   `json:"description"`
-	UserID      int64    `json:"userId"`
-	UserName    string   `json:"userName"`
+	Name          string   `json:"name"`
+	Avatar        string   `json:"avatar"` // URL
+	Career        string   `json:"career"`
+	University    string   `json:"university"`
+	Skills        []string `json:"skills"`
+	Description   string   `json:"description"`
+	UserID        int64    `json:"userId"`
+	UserName      string   `json:"userName"`
+	ContactStatus string   `json:"contactStatus"` // Puede ser 'pending', 'accepted', 'rejected', o "" (vacío)
 }
 
 // CompanyFeedData contiene los datos específicos para un item del feed de tipo "company".

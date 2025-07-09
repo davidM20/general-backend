@@ -83,15 +83,37 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 		servicePayload["typeMessageId"] = payload.TypeMessageId
 	}
 
-	_, err = services.ProcessAndSaveChatMessage(conn.ID, servicePayload, messageServerID, conn.Manager())
+	// El servicio ahora debería devolver el mensaje guardado
+	savedMessage, err := services.ProcessAndSaveChatMessage(conn.ID, servicePayload, messageServerID, conn.Manager())
 	if err != nil {
 		logger.Errorf(handlerSendChatMessageLogComponent, "Error en ProcessAndSaveChatMessage para UserID %d, PID %s: %v", conn.ID, msg.PID, err)
 		conn.SendServerAck(msg.PID, "error", err) // Enviar el error del servicio al cliente
 		return fmt.Errorf("error procesando mensaje en servicio: %w", err)
 	}
 
-	logger.Successf(handlerSendChatMessageLogComponent, "Mensaje de UserID %d (ChatID: %s, PID: %s) procesado y guardado con ID de servidor: %s", conn.ID, payload.ChatId, msg.PID, messageServerID)
-	conn.SendServerAck(msg.PID, "processed", nil) // Éxito
+	// Enviar una confirmación de estado 'sent' al remitente original.
+	// Esto reemplaza el simple "processed" ACK con una notificación de estado más informativa.
+	statusUpdatePayload := map[string]interface{}{
+		"originalPID": msg.PID, // El PID original que el cliente envió
+		"message":     savedMessage,
+	}
+
+	statusUpdateMsg := types.ServerToClientMessage{
+		PID:        conn.Manager().Callbacks().GeneratePID(),
+		Type:       "message_status_update", // Nuevo tipo de mensaje para que el frontend lo maneje
+		FromUserID: conn.ID,
+		Payload:    statusUpdatePayload,
+	}
+
+	if err := conn.SendMessage(statusUpdateMsg); err != nil {
+		logger.Errorf(handlerSendChatMessageLogComponent, "Error enviando message_status_update a UserID %d para PID %s: %v", conn.ID, msg.PID, err)
+		// No devolvemos error aquí para no cerrar la conexión, pero sí lo registramos.
+	}
+
+	logger.Successf(handlerSendChatMessageLogComponent, "Mensaje de UserID %d (ChatID: %s, PID: %s) procesado. Notificación de estado 'sent' enviada.", conn.ID, payload.ChatId, msg.PID)
+
+	// El ACK genérico ya no es necesario si enviamos una actualización de estado.
+	// conn.SendServerAck(msg.PID, "processed", nil)
 
 	return nil
 }

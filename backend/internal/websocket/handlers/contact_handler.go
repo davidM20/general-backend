@@ -148,6 +148,19 @@ func HandleContactRequest(conn *customws.Connection[wsmodels.WsUserData], msg ty
 		return nil // Se notificó adecuadamente, no propagar error
 	}
 
+	// --- NUEVA VALIDACIÓN: Verificar si ya existe una solicitud de contacto entre los usuarios ---
+	exists, err := queries.CheckContactExists(fromUserID, payload.ToUserID)
+	if err != nil {
+		logger.Errorf("HANDLER_CONTACT", "Error al verificar si el contacto ya existe entre %d y %d: %v", fromUserID, payload.ToUserID, err)
+		conn.SendErrorNotification(msg.PID, 500, "Error interno al procesar la solicitud.")
+		return err // Devolver err para que el middleware lo maneje si es necesario
+	}
+	if exists {
+		logger.Warnf("HANDLER_CONTACT", "Intento de crear contacto duplicado entre %d y %d", fromUserID, payload.ToUserID)
+		conn.SendErrorNotification(msg.PID, 409, "Ya existe una solicitud de contacto o amistad con este usuario.")
+		return nil // Error controlado, no es necesario propagar.
+	}
+
 	chatID := uuid.New().String()
 
 	err = queries.CreateContact(fromUserID, payload.ToUserID, chatID, "pending")

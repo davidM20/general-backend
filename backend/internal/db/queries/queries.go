@@ -1098,57 +1098,56 @@ func GetEventsByUserID(userID int64, onlyUnread bool, limit int, offset int) ([]
 }
 
 // UpdateContactStatus actualiza el estado de un contacto entre dos usuarios.
-func UpdateContactStatus(userID, otherUserID int64, status string, timestamp string) error {
+func UpdateContactStatus(userID, otherUserID int64, status string, _ string) error {
+	// La tabla Contact no tiene columna UpdatedAt; solo actualizamos el estado.
+	// AÑADIMOS la condición de que el estado actual DEBE ser 'pending'.
 	query := `
-		UPDATE Contact 
-		SET Status = ?, 
-			UpdatedAt = ? 
-		WHERE (User1Id = ? AND User2Id = ?) 
-		   OR (User1Id = ? AND User2Id = ?)`
+        UPDATE Contact 
+        SET Status = ?
+        WHERE ((User1Id = ? AND User2Id = ?) OR (User1Id = ? AND User2Id = ?))
+          AND Status = 'pending'`
 
-	updatedAt, err := time.Parse(time.RFC3339, timestamp)
+	result, err := DB.Exec(query, status, userID, otherUserID, otherUserID, userID)
 	if err != nil {
-		return fmt.Errorf("error parseando timestamp: %w", err)
-	}
-
-	result, err := DB.Exec(query, status, updatedAt, userID, otherUserID, otherUserID, userID)
-	if err != nil {
-		return fmt.Errorf("error actualizando estado del contacto: %w", err)
+		return fmt.Errorf("error al actualizar el estado del contacto: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("error obteniendo filas afectadas: %w", err)
+		return fmt.Errorf("error al obtener las filas afectadas: %w", err)
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("no se encontró el contacto entre los usuarios %d y %d", userID, otherUserID)
+		// Esto significa que no se encontró ningún contacto pendiente para actualizar.
+		// Puede ser porque ya fue aceptado, rechazado o cancelado.
+		return fmt.Errorf("no se encontró una solicitud de contacto pendiente para actualizar")
 	}
 
-	logger.Infof("QUERY_CONTACT", "Estado de contacto actualizado para usuarios %d y %d a '%s'", userID, otherUserID, status)
 	return nil
 }
 
-// UpdateContactChatId actualiza el chatId de un contacto entre dos usuarios.
-func UpdateContactChatId(userID, otherUserID int64, chatId string) error {
+// UpdateContactChatId actualiza el campo ChatId de un contacto existente.
+func UpdateContactChatId(user1ID, user2ID int64, chatID string) error {
 	query := "UPDATE Contact SET ChatId = ? WHERE ((User1Id = ? AND User2Id = ?) OR (User1Id = ? AND User2Id = ?))"
-	_, err := DB.Exec(query, chatId, userID, otherUserID, otherUserID, userID)
+	_, err := DB.Exec(query, chatID, user1ID, user2ID, user2ID, user1ID)
 	if err != nil {
-		logger.Errorf("QUERY", "Error al actualizar ChatId para los usuarios %d y %d: %v", userID, otherUserID, err)
+		logger.Errorf("QUERY", "Error al actualizar ChatId para los usuarios %d y %d: %v", user1ID, user2ID, err)
 		return fmt.Errorf("no se pudo actualizar el chatId: %w", err)
 	}
-	logger.Successf("QUERY", "ChatId actualizado correctamente para los usuarios %d y %d", userID, otherUserID)
+	logger.Successf("QUERY", "ChatId actualizado correctamente para los usuarios %d y %d", user1ID, user2ID)
 	return nil
 }
 
 // GetNotificationById obtiene una notificación por su ID.
 func GetNotificationById(notificationId string) (*models.Notification, error) {
+	// La tabla Notification tiene la columna primaria 'Id'.
+	// La mapeamos como NotificationId para mantener compatibilidad con el struct.
 	query := `
-		SELECT NotificationId, UserId, Type, Title, Message, 
+		SELECT Id AS NotificationId, UserId, Type, Title, Message, 
 			   IsRead, CreatedAt, UpdatedAt, OtherUserId,
 			   ActionRequired, Status, ActionTakenAt
 		FROM Notification
-		WHERE NotificationId = ?`
+		WHERE Id = ?`
 
 	var notification models.Notification
 	var actionTakenAt sql.NullTime
@@ -1266,4 +1265,44 @@ ORDER BY
 	}
 
 	return results, nil
+}
+
+// GetEventById recupera un evento específico por su ID.
+func GetEventById(eventId int64) (*models.Event, error) {
+	query := `SELECT Id, EventType, EventTitle, Description, UserId, OtherUserId, 
+					 ProyectId, CreateAt, IsRead, GroupId, Status, 
+					 ActionRequired, ActionTakenAt, Metadata
+			  FROM Event WHERE Id = ? LIMIT 1`
+
+	var event models.Event
+	var metadataScanValue []byte
+
+	err := DB.QueryRow(query, eventId).Scan(
+		&event.Id,
+		&event.EventType,
+		&event.EventTitle,
+		&event.Description,
+		&event.UserId,
+		&event.OtherUserId,
+		&event.ProyectId,
+		&event.CreateAt,
+		&event.IsRead,
+		&event.GroupId,
+		&event.Status,
+		&event.ActionRequired,
+		&event.ActionTakenAt,
+		&metadataScanValue,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error obteniendo evento: %w", err)
+	}
+
+	if metadataScanValue != nil {
+		event.Metadata = json.RawMessage(metadataScanValue)
+	}
+
+	return &event, nil
 }

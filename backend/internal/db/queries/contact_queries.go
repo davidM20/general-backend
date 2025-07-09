@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"database/sql"
 	"fmt"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
@@ -57,6 +58,26 @@ NORMAS Y DIRECTRICES PARA ESTE ARCHIVO:
 
 func GetContact(contactID int) (*models.Contact, error) {
 	return nil, nil
+}
+
+// CheckContactExists verifica si ya existe un contacto (en cualquier dirección) entre dos usuarios.
+func CheckContactExists(user1ID, user2ID int64) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 FROM Contact 
+			WHERE (User1Id = ? AND User2Id = ?) 
+			   OR (User1Id = ? AND User2Id = ?)
+		)`
+	var exists bool
+	err := DB.QueryRow(query, user1ID, user2ID, user2ID, user1ID).Scan(&exists)
+	if err != nil {
+		// sql.ErrNoRows no debería ocurrir con SELECT EXISTS, pero es una buena práctica manejarlo.
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("error verificando si el contacto existe: %w", err)
+	}
+	return exists, nil
 }
 
 func CreateContact(user1ID, user2ID int64, chatID string, status string) error {

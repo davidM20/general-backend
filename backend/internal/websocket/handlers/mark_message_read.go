@@ -37,13 +37,34 @@ func HandleMarkMessageRead(conn *customws.Connection[wsmodels.WsUserData], msg t
 		return fmt.Errorf("messageId requerido")
 	}
 
-	if err := services.MarkMessageAsRead(conn.ID, payload.MessageId, conn.Manager()); err != nil {
+	senderID, err := services.MarkMessageAsRead(conn.ID, payload.MessageId, conn.Manager())
+	if err != nil {
 		logger.Errorf(logComponent, "Error marcando mensaje %s como leído: %v", payload.MessageId, err)
-		conn.SendErrorNotification(msg.PID, 500, "Error interno")
+		conn.SendErrorNotification(msg.PID, 500, "Error interno al marcar como leído")
 		return err
 	}
 
-	// ACK
+	// Notificar al remitente original que su mensaje fue leído, si está en línea.
+	if senderID != 0 && conn.Manager().IsUserOnline(senderID) {
+		statusUpdatePayload := map[string]interface{}{
+			"messageId": payload.MessageId,
+			"status":    "read",
+		}
+		statusUpdateMsg := types.ServerToClientMessage{
+			PID:        conn.Manager().Callbacks().GeneratePID(),
+			Type:       "message_status_update",
+			FromUserID: conn.ID, // Quien leyó el mensaje
+			Payload:    statusUpdatePayload,
+		}
+
+		if err := conn.Manager().SendMessageToUser(senderID, statusUpdateMsg); err != nil {
+			logger.Warnf(logComponent, "No se pudo notificar al remitente (ID: %d) sobre lectura de mensaje %s: %v", senderID, payload.MessageId, err)
+		} else {
+			logger.Infof(logComponent, "Notificación de lectura para mensaje %s enviada al remitente (ID: %d)", payload.MessageId, senderID)
+		}
+	}
+
+	// Enviar ACK al cliente que ejecutó la acción de marcar como leído.
 	conn.SendServerAck(msg.PID, "marked_read", nil)
 	logger.Infof(logComponent, "Mensaje %s marcado como leído por UserID %d", payload.MessageId, conn.ID)
 	return nil

@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
@@ -19,26 +20,30 @@ import (
 func AcceptFriendRequest(userID int64, notificationId string, timestamp string, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
 	logger.Infof("SERVICE_CONTACT", "Procesando aceptación de solicitud de amistad para user %d", userID)
 
-	// Obtener la notificación para validar y obtener el ID del otro usuario
-	notification, err := queries.GetNotificationById(notificationId)
+	// Convertir ID a int64 y obtener el evento correspondiente
+	eventID, err := strconv.ParseInt(notificationId, 10, 64)
 	if err != nil {
-		return fmt.Errorf("error obteniendo notificación: %w", err)
+		return fmt.Errorf("ID de evento inválido: %s", notificationId)
 	}
 
-	if notification == nil {
-		return fmt.Errorf("notificación no encontrada: %s", notificationId)
+	event, err := queries.GetEventById(eventID)
+	if err != nil {
+		return fmt.Errorf("error obteniendo evento: %w", err)
+	}
+	if event == nil {
+		return fmt.Errorf("evento no encontrado: %d", eventID)
 	}
 
-	// Validar que la notificación sea para este usuario
-	if notification.UserId != userID {
-		return fmt.Errorf("notificación no pertenece al usuario %d", userID)
+	// Validar que el evento sea para este usuario
+	if event.UserId != userID {
+		return fmt.Errorf("el evento no pertenece al usuario %d", userID)
 	}
 
-	// Obtener el ID del otro usuario del payload
-	otherUserId := notification.OtherUserId
-	if otherUserId == 0 {
-		return fmt.Errorf("ID del otro usuario no encontrado en la notificación")
+	// Obtener el ID del otro usuario
+	if !event.OtherUserId.Valid {
+		return fmt.Errorf("ID del otro usuario no encontrado en el evento")
 	}
+	otherUserId := event.OtherUserId.Int64
 
 	// Actualizar el estado del contacto
 	err = queries.UpdateContactStatus(userID, otherUserId, "accepted", timestamp)
@@ -80,26 +85,30 @@ func AcceptFriendRequest(userID int64, notificationId string, timestamp string, 
 func RejectFriendRequest(userID int64, notificationId string, timestamp string, manager *customws.ConnectionManager[wsmodels.WsUserData]) error {
 	logger.Infof("SERVICE_CONTACT", "Procesando rechazo de solicitud de amistad para user %d", userID)
 
-	// Obtener la notificación para validar y obtener el ID del otro usuario
-	notification, err := queries.GetNotificationById(notificationId)
+	// Convertir ID a int64 y obtener el evento correspondiente
+	eventID, err := strconv.ParseInt(notificationId, 10, 64)
 	if err != nil {
-		return fmt.Errorf("error obteniendo notificación: %w", err)
+		return fmt.Errorf("ID de evento inválido: %s", notificationId)
 	}
 
-	if notification == nil {
-		return fmt.Errorf("notificación no encontrada: %s", notificationId)
+	event, err := queries.GetEventById(eventID)
+	if err != nil {
+		return fmt.Errorf("error obteniendo evento: %w", err)
+	}
+	if event == nil {
+		return fmt.Errorf("evento no encontrado: %d", eventID)
 	}
 
-	// Validar que la notificación sea para este usuario
-	if notification.UserId != userID {
-		return fmt.Errorf("notificación no pertenece al usuario %d", userID)
+	// Validar que el evento sea para este usuario
+	if event.UserId != userID {
+		return fmt.Errorf("el evento no pertenece al usuario %d", userID)
 	}
 
-	// Obtener el ID del otro usuario del payload
-	otherUserId := notification.OtherUserId
-	if otherUserId == 0 {
-		return fmt.Errorf("ID del otro usuario no encontrado en la notificación")
+	// Obtener el ID del otro usuario
+	if !event.OtherUserId.Valid {
+		return fmt.Errorf("ID del otro usuario no encontrado en el evento")
 	}
+	otherUserId := event.OtherUserId.Int64
 
 	// Actualizar el estado del contacto
 	err = queries.UpdateContactStatus(userID, otherUserId, "rejected", timestamp)
