@@ -111,6 +111,8 @@ type User struct {
 	Sector             sql.NullString `json:"sector,omitempty" db:"Sector"`
 	Location           sql.NullString `json:"location,omitempty" db:"Location"`
 	ChatId             sql.NullString `json:"chat_id,omitempty" db:"ChatId"`
+	CreatedAt          time.Time      `json:"created_at" db:"CreatedAt"`
+	UpdatedAt          time.Time      `json:"updated_at" db:"UpdatedAt"`
 }
 
 // Online defines the structure for the Online table.
@@ -553,6 +555,21 @@ type CompleteProfile struct {
 	Languages      []Languages      `json:"languages"`
 	Projects       []Project        `json:"projects"`
 	Degree         *Degree          `json:"degree,omitempty"`
+}
+
+// ReputationStats contiene las estadísticas de reputación de un usuario.
+type ReputationStats struct {
+	ReviewCount   int `json:"reviewCount"`
+	TotalPointsRP int `json:"totalPointsRp"`
+}
+
+// ReputationReviewInfo es el modelo para los datos brutos de una reseña desde la base de datos.
+type ReputationReviewInfo struct {
+	Id                  int64           `json:"id"`
+	Rating              sql.NullFloat64 `json:"rating"`
+	Comment             sql.NullString  `json:"comment"`
+	ReviewerCompanyName sql.NullString  `json:"reviewerCompanyName"`
+	ReviewerPicture     sql.NullString  `json:"reviewerPicture"`
 }
 
 // PaginatedUserResponse es la estructura para las respuestas de listas de usuarios paginadas.

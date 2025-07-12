@@ -122,7 +122,8 @@ const (
 	UpdateApplicantStatusPath = ListEventApplicantsPath + "/{applicantID:[0-9]+}/status"
 
 	// Rutas de Reputación
-	ReviewsPath = "/reviews"
+	ReviewsPath       = "/reviews"
+	StudentReviewPath = "/reviews/student"
 
 	// Rutas de Notificaciones
 	NotificationsPath          = "/notifications"
@@ -163,6 +164,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	api.HandleFunc(PDFViewPath, handlers.pdfHandler.ViewPDF).Methods(http.MethodGet)
 	api.HandleFunc(VideoMasterPlaylistPath, handlers.videoHandler.StreamVideoMasterPlaylist).Methods(http.MethodGet)
 	api.HandleFunc(VideoVariantPath, handlers.videoHandler.StreamVideoVariant).Methods(http.MethodGet)
+	api.HandleFunc(UserProfilePictureViewPath, handlers.imageHandler.ViewUserProfilePicture).Methods(http.MethodGet)
 
 	// Configurar rutas protegidas (requieren autenticación JWT)
 	protected := api.PathPrefix("/").Subrouter()
@@ -171,8 +173,8 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	// Configurar todas las rutas protegidas usando la función genérica
 	// Rutas de usuarios
 	setupProtectedRoute(protected, UsersMePath, handlers.userHandler.GetMyProfile, http.MethodGet)
+	setupProtectedRoute(protected, UsersMePath, handlers.userHandler.UpdateMyProfile, http.MethodPut)
 	setupProtectedRoute(protected, ProfilePicturePath, handlers.imageHandler.UpdateProfilePicture, http.MethodPost)
-	setupProtectedRoute(protected, UserProfilePictureViewPath, handlers.imageHandler.ViewUserProfilePicture, http.MethodGet)
 
 	// Rutas de empresas
 	setupProtectedRoute(protected, EnterprisesMePath, handlers.enterpriseHandler.UpdateEnterpriseProfile, http.MethodPut)
@@ -204,6 +206,7 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 
 	// Rutas de Reputación
 	setupProtectedRoute(protected, ReviewsPath, handlers.reputationHandler.CreateReview, http.MethodPost)
+	setupProtectedRoute(protected, StudentReviewPath, handlers.reputationHandler.CreateReviewByStudent, http.MethodPost)
 
 	// Rutas de Notificaciones
 	setupProtectedRoute(protected, MarkNotificationAsReadPath, handlers.notificationHandler.MarkAsRead, http.MethodPut)
@@ -262,7 +265,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		searchHandler:         handlers.NewSearchHandler(searchService),
 		adminHandler:          handlers.NewAdminHandler(db, cfg),
 		notificationHandler:   handlers.NewNotificationHandler(db),
-		jobApplicationHandler: handlers.NewJobApplicationHandler(jobApplicationService),
+		jobApplicationHandler: handlers.NewJobApplicationHandler(jobApplicationService, db),
 		reputationHandler:     handlers.NewReputationHandler(reputationService),
 	}
 }

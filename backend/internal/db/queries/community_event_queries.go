@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/db"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
@@ -482,4 +483,22 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 			PageSize:    pageSize,
 		},
 	}, nil
+}
+
+// GetEventCreatorID obtiene el ID del usuario que creó un evento específico.
+func GetEventCreatorID(eventID int64) (int64, error) {
+	db := db.GetDB()
+	var creatorID int64
+
+	query := "SELECT CreatedByUserId FROM CommunityEvent WHERE Id = ?"
+	err := db.QueryRow(query, eventID).Scan(&creatorID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("evento con ID %d no encontrado", eventID)
+		}
+		logger.Errorf("QUERIES", "Error al obtener el creador del evento %d: %v", eventID, err)
+		return 0, err
+	}
+
+	return creatorID, nil
 }

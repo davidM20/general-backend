@@ -37,11 +37,33 @@ func GetCompleteCompanyProfile(userID int64) (*models.CompleteCompanyProfile, er
 		return nil
 	})
 
+	// 3. Obtener las estadísticas de reputación
+	g.Go(func() error {
+		stats, err := queries.GetReputationStatsByUserID(userID)
+		if err != nil {
+			logger.Warnf("COMPANY_SERVICE", "Error obteniendo estadísticas de reputación para CompanyID %d: %v", userID, err)
+			return nil // No es un error fatal
+		}
+		completeProfile.Reputation = stats
+		return nil
+	})
+
+	// 4. Obtener la lista de reseñas
+	g.Go(func() error {
+		reviews, err := queries.GetReputationReviewsByUserID(userID)
+		if err != nil {
+			logger.Warnf("COMPANY_SERVICE", "Error obteniendo reseñas para CompanyID %d: %v", userID, err)
+			return nil // No es un error fatal
+		}
+		completeProfile.Reviews = reviews
+		return nil
+	})
+
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
-	// 3. Calcular las estadísticas
+	// 5. Calcular las estadísticas
 	calculateCompanyStats(&completeProfile)
 
 	return &completeProfile, nil

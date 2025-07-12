@@ -1,6 +1,10 @@
 package wsmodels
 
-import "time"
+import (
+	"time"
+
+	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+)
 
 // WsUserData se asocia con cada conexión WebSocket gestionada por customws.
 // Contiene la información esencial del usuario para la sesión WebSocket.
@@ -52,31 +56,33 @@ type NotificationInfo struct {
 // ProfileData representa la información completa del perfil de un usuario.
 // Agrega datos de múltiples tablas de la base dedatos.
 type ProfileData struct {
-	ID                 int64           `json:"id"`
-	FirstName          string          `json:"firstName"`
-	LastName           string          `json:"lastName"`
-	UserName           string          `json:"userName"`
-	Email              string          `json:"email"`
-	Phone              string          `json:"phone,omitempty"`
-	Sex                string          `json:"sex,omitempty"`
-	DocId              string          `json:"docId,omitempty"`
-	NationalityId      int             `json:"nationalityId,omitempty"`
-	NationalityName    string          `json:"nationalityName,omitempty"`
-	Birthdate          string          `json:"birthdate,omitempty"` // Formato YYYY-MM-DD
-	Picture            string          `json:"picture,omitempty"`
-	DegreeName         string          `json:"degreeName,omitempty"`
-	UniversityName     string          `json:"universityName,omitempty"`
-	RoleID             int             `json:"roleId"`
-	RoleName           string          `json:"roleName"`
-	StatusAuthorizedId int             `json:"statusAuthorizedId"`
-	Summary            string          `json:"summary,omitempty"`
-	Address            string          `json:"address,omitempty"`
-	Github             string          `json:"github,omitempty"`
-	Linkedin           string          `json:"linkedin,omitempty"`
-	CreatedAt          time.Time       `json:"createdAt"`
-	UpdatedAt          time.Time       `json:"updatedAt"`
-	Curriculum         CurriculumVitae `json:"curriculum"`
-	IsOnline           bool            `json:"isOnline,omitempty"`
+	ID                 int64                   `json:"id"`
+	FirstName          string                  `json:"firstName"`
+	LastName           string                  `json:"lastName"`
+	UserName           string                  `json:"userName"`
+	Email              string                  `json:"email"`
+	Phone              string                  `json:"phone,omitempty"`
+	Sex                string                  `json:"sex,omitempty"`
+	DocId              string                  `json:"docId,omitempty"`
+	NationalityId      int                     `json:"nationalityId,omitempty"`
+	NationalityName    string                  `json:"nationalityName,omitempty"`
+	Birthdate          string                  `json:"birthdate,omitempty"` // Formato YYYY-MM-DD
+	Picture            string                  `json:"picture,omitempty"`
+	DegreeName         string                  `json:"degreeName,omitempty"`
+	UniversityName     string                  `json:"universityName,omitempty"`
+	RoleID             int                     `json:"roleId"`
+	RoleName           string                  `json:"roleName"`
+	StatusAuthorizedId int                     `json:"statusAuthorizedId"`
+	Summary            string                  `json:"summary,omitempty"`
+	Address            string                  `json:"address,omitempty"`
+	Github             string                  `json:"github,omitempty"`
+	Linkedin           string                  `json:"linkedin,omitempty"`
+	CreatedAt          time.Time               `json:"createdAt"`
+	UpdatedAt          time.Time               `json:"updatedAt"`
+	Curriculum         CurriculumVitae         `json:"curriculum"`
+	IsOnline           bool                    `json:"isOnline,omitempty"`
+	Reputation         *models.ReputationStats `json:"reputation,omitempty"`
+	Reviews            []ReputationReviewItem  `json:"reviews,omitempty"`
 }
 
 // CurriculumVitae agrupa las secciones del currículum de un usuario.
@@ -87,6 +93,15 @@ type CurriculumVitae struct {
 	Skills         []SkillItem          `json:"skills"`
 	Languages      []LanguageItem       `json:"languages"`
 	Projects       []ProjectItem        `json:"projects"`
+}
+
+// ReputationReviewItem representa un único item de reseña para ser mostrado en el cliente.
+type ReputationReviewItem struct {
+	Id                  int64   `json:"id"`
+	Rating              float64 `json:"rating,omitempty"`
+	Comment             string  `json:"comment,omitempty"`
+	ReviewerCompanyName string  `json:"reviewerCompanyName,omitempty"`
+	ReviewerPicture     string  `json:"reviewerPicture,omitempty"`
 }
 
 // EducationItem representa una entrada en la sección de educación del currículum.

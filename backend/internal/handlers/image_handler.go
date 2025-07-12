@@ -142,9 +142,25 @@ func (h *ImageHandler) UpdateProfilePicture(w http.ResponseWriter, r *http.Reque
 }
 
 // ViewUserProfilePicture maneja la solicitud GET para ver la foto de perfil de un usuario.
-// La autenticación la maneja el middleware.
+// La autenticación se realiza mediante un token JWT proporcionado como query param "token".
 func (h *ImageHandler) ViewUserProfilePicture(w http.ResponseWriter, r *http.Request) {
-	// 1. Obtener userID del path
+	// 1. Autenticar con token de query param
+	tokenStr := r.URL.Query().Get("token")
+	if tokenStr == "" {
+		logger.Warn("ViewUserProfilePicture.Auth", "Token no proporcionado en query params.")
+		http.Error(w, `{"error": "Token de autenticación requerido."}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Validar el token
+	claims, err := auth.ValidateJWT(tokenStr, []byte(h.cfg.JwtSecret))
+	if err != nil {
+		logger.Warnf("ViewUserProfilePicture.Auth", "Token inválido: %v", err)
+		http.Error(w, `{"error": "Token inválido o expirado."}`, http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Obtener userID del path
 	vars := mux.Vars(r)
 	userIDStr, ok := vars["userID"]
 	if !ok {
@@ -160,7 +176,9 @@ func (h *ImageHandler) ViewUserProfilePicture(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// 2. Obtener el nombre del archivo de la foto de perfil desde el servicio
+	logger.Infof("ViewUserProfilePicture.Auth", "Acceso autorizado para UserID: %s para ver perfil de UserID: %d", claims.Subject, userID)
+
+	// 3. Obtener el nombre del archivo de la foto de perfil desde el servicio
 	filename, err := h.imageService.GetUserProfilePictureFilename(r.Context(), userID)
 	if err != nil {
 		logger.Errorf("ViewUserProfilePicture.ServiceCall", "Error obteniendo nombre de archivo para usuario %d: %v", userID, err)
@@ -174,7 +192,7 @@ func (h *ImageHandler) ViewUserProfilePicture(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// 3. Servir la imagen (lógica similar a ViewImage pero sin validación de token aquí)
+	// 4. Servir la imagen
 	if h.cfg.GCSBucketName == "" {
 		logger.Error("ViewUserProfilePicture.Config", "El nombre del bucket GCS no está configurado.")
 		http.Error(w, `{"error": "Error de configuración del servidor."}`, http.StatusInternalServerError)

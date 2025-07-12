@@ -46,11 +46,59 @@ func (h *CommunityEventHandler) CreateCommunityEvent(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Validación básica para campos requeridos
-	if req.PostType == "" || req.Title == "" {
-		logger.Warnf("COMMUNITY_EVENT_HANDLER", "CreateCommunityEvent: Faltan campos requeridos PostType o Title")
-		http.Error(w, "Los campos 'post_type' y 'title' son requeridos", http.StatusBadRequest)
+	/*
+	* ===================================================
+	* REGLAS DE VALIDACIÓN POR TIPO DE PUBLICACIÓN (PostType)
+	* ===================================================
+	*
+	* - EVENTO: Requiere 'title', 'description', 'eventDate' y 'location'.
+	* - NOTICIA/ARTICULO: Requiere 'title' y 'description'. 'contentUrl' es recomendado.
+	* - ANUNCIO: Requiere 'title' y 'description'.
+	* - DESAFIO: Requiere 'title', 'description' y 'challengeEndDate'.
+	* - DISCUSION: Requiere 'title' (como la pregunta principal). 'description' es opcional.
+	* - MULTIMEDIA: No requiere 'title', pero sí 'description' y al menos uno de ('imageUrl' o 'contentUrl').
+	*
+	 */
+
+	// --- Validación Dinámica ---
+	if req.PostType == "" {
+		http.Error(w, "El campo 'post_type' es requerido", http.StatusBadRequest)
 		return
+	}
+
+	switch req.PostType {
+	case "EVENTO":
+		if req.Title == "" || req.Description == nil || *req.Description == "" || req.EventDate == nil || req.Location == nil || *req.Location == "" {
+			http.Error(w, "Para 'EVENTO', se requieren: title, description, eventDate y location", http.StatusBadRequest)
+			return
+		}
+	case "NOTICIA", "ARTICULO", "ANUNCIO":
+		if req.Title == "" || req.Description == nil || *req.Description == "" {
+			http.Error(w, "Para este tipo de post, se requieren: title y description", http.StatusBadRequest)
+			return
+		}
+	case "DESAFIO":
+		if req.Title == "" || req.Description == nil || *req.Description == "" || req.ChallengeEndDate == nil {
+			http.Error(w, "Para 'DESAFIO', se requieren: title, description y challengeEndDate", http.StatusBadRequest)
+			return
+		}
+	case "DISCUSION":
+		if req.Title == "" {
+			http.Error(w, "Para 'DISCUSION', se requiere un 'title' que actúe como pregunta", http.StatusBadRequest)
+			return
+		}
+	case "MULTIMEDIA":
+		if (req.Description == nil || *req.Description == "") || (req.ImageUrl == nil || *req.ImageUrl == "") && (req.ContentUrl == nil || *req.ContentUrl == "") {
+			http.Error(w, "Para 'MULTIMEDIA', se requiere 'description' y al menos uno de ('imageUrl' o 'contentUrl')", http.StatusBadRequest)
+			return
+		}
+	default:
+		// Para cualquier otro tipo no definido, se requiere al menos un título.
+		if req.Title == "" {
+			logger.Warnf("COMMUNITY_EVENT_HANDLER", "CreateCommunityEvent: Faltan campos requeridos para PostType no estándar: %s", req.PostType)
+			http.Error(w, "El campo 'title' es requerido", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Llamar al servicio para crear el evento
@@ -91,10 +139,10 @@ func (h *CommunityEventHandler) GetMyCommunityEvents(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Verificar que el rol es 3 (Empresa)
-	if roleID != 3 {
-		logger.Warnf("COMMUNITY_EVENT_HANDLER", "GetMyCommunityEvents: Usuario %d con rol %d intentó acceder a un recurso de empresa", userID, roleID)
-		http.Error(w, "Acceso denegado. Este recurso es solo para empresas.", http.StatusForbidden)
+	// Verificar que el rol es 3 (Empresa) o 1 (Estudiante)
+	if roleID != 3 && roleID != 1 && roleID != 2 {
+		logger.Warnf("COMMUNITY_EVENT_HANDLER", "GetMyCommunityEvents: Usuario %d con rol %d intentó acceder a un recurso restringido", userID, roleID)
+		http.Error(w, "Acceso denegado. Este recurso es solo para empresas o estudiantes.", http.StatusForbidden)
 		return
 	}
 

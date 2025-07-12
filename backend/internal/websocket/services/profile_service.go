@@ -1,9 +1,9 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	// Necesario para convertir sql.NullTime a string
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
@@ -11,6 +11,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/customws"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
+	"golang.org/x/sync/errgroup"
 )
 
 var profileDB *sql.DB
@@ -28,81 +29,182 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 		return nil, fmt.Errorf("ProfileService no inicializado")
 	}
 
-	userData, err := queries.GetUserFullProfileData(userID)
-	if err != nil {
-		logger.Errorf("SERVICE_PROFILE", "Error obteniendo datos base del perfil para UserID %d: %v", userID, err)
+	g, _ := errgroup.WithContext(context.Background())
+	var profileData wsmodels.ProfileData
+
+	// 1. Obtener datos base del perfil
+	g.Go(func() error {
+		userData, err := queries.GetUserFullProfileData(userID)
+		if err != nil {
+			logger.Errorf("SERVICE_PROFILE", "Error obteniendo datos base para UserID %d: %v", userID, err)
+			return err
+		}
+		profileData.ID = userData.Id
+		profileData.FirstName = safeNullString(userData.FirstName)
+		profileData.LastName = safeNullString(userData.LastName)
+		profileData.UserName = userData.UserName
+		profileData.Email = userData.Email
+		profileData.Phone = safeNullString(userData.Phone)
+		profileData.Sex = safeNullString(userData.Sex)
+		profileData.DocId = safeNullString(userData.DocId)
+		if userData.NationalityId.Valid {
+			profileData.NationalityId = int(userData.NationalityId.Int32)
+		}
+		profileData.NationalityName = safeNullString(userData.NationalityName)
+		if userData.Birthdate.Valid {
+			profileData.Birthdate = userData.Birthdate.Time.Format("2006-01-02")
+		}
+		profileData.Picture = safeNullString(userData.Picture)
+		profileData.DegreeName = safeNullString(userData.DegreeName)
+		profileData.UniversityName = safeNullString(userData.UniversityName)
+		profileData.RoleID = userData.RoleId
+		profileData.RoleName = safeNullString(userData.RoleName)
+		profileData.StatusAuthorizedId = userData.StatusAuthorizedId
+		profileData.Summary = safeNullString(userData.Summary)
+		profileData.Address = safeNullString(userData.Address)
+		profileData.Github = safeNullString(userData.Github)
+		profileData.Linkedin = safeNullString(userData.Linkedin)
+		// profileData.CreatedAt = userData.CreatedAt // Campo no disponible en models.User
+		// profileData.UpdatedAt = userData.UpdatedAt // Campo no disponible en models.User
+		return nil
+	})
+
+	// 2. Obtener datos del currículum concurrentemente
+	g.Go(func() error {
+		items, err := queries.GetEducationForUser(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error en CV (Education) para UserID %d: %v", userID, err)
+			return nil
+		}
+		profileData.Curriculum.Education = items
+		return nil
+	})
+	g.Go(func() error {
+		items, err := queries.GetWorkExperienceForUser(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error en CV (Experience) para UserID %d: %v", userID, err)
+			return nil
+		}
+		profileData.Curriculum.Experience = items
+		return nil
+	})
+	g.Go(func() error {
+		items, err := queries.GetCertificationsForUser(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error en CV (Certs) para UserID %d: %v", userID, err)
+			return nil
+		}
+		profileData.Curriculum.Certifications = items
+		return nil
+	})
+	g.Go(func() error {
+		items, err := queries.GetProjectsForUser(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error en CV (Projects) para UserID %d: %v", userID, err)
+			return nil
+		}
+		profileData.Curriculum.Projects = items
+		return nil
+	})
+	g.Go(func() error {
+		items, err := queries.GetSkillsForUser(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error en CV (Skills) para UserID %d: %v", userID, err)
+			return nil
+		}
+		for _, dbItem := range items {
+			profileData.Curriculum.Skills = append(profileData.Curriculum.Skills, wsmodels.SkillItem{
+				ID:    dbItem.Id,
+				Skill: dbItem.Skill,
+				Level: dbItem.Level,
+			})
+		}
+		return nil
+	})
+	g.Go(func() error {
+		items, err := queries.GetLanguagesForUser(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error en CV (Langs) para UserID %d: %v", userID, err)
+			return nil
+		}
+		for _, dbItem := range items {
+			profileData.Curriculum.Languages = append(profileData.Curriculum.Languages, wsmodels.LanguageItem{
+				ID:       dbItem.Id,
+				Language: dbItem.Language,
+				Level:    dbItem.Level,
+			})
+		}
+		return nil
+	})
+
+	// 3. Obtener estado de conexión
+	if manager != nil {
+		profileData.IsOnline = manager.IsUserOnline(userID)
+	}
+
+	// 4. Obtener estadísticas de reputación
+	g.Go(func() error {
+		stats, err := queries.GetReputationStatsByUserID(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error obteniendo stats de reputación para UserID %d: %v", userID, err)
+			return nil // No es un error fatal
+		}
+		profileData.Reputation = stats
+		return nil
+	})
+
+	// 5. Obtener lista de reseñas
+	g.Go(func() error {
+		reviewsDB, err := queries.GetReputationReviewsByUserID(userID)
+		if err != nil {
+			logger.Warnf("SERVICE_PROFILE", "Error obteniendo reseñas para UserID %d: %v", userID, err)
+			return nil // No es un error fatal
+		}
+
+		reviewsWS := make([]wsmodels.ReputationReviewItem, 0, len(reviewsDB))
+		for _, r := range reviewsDB {
+			reviewsWS = append(reviewsWS, wsmodels.ReputationReviewItem{
+				Rating:              safeNullFloat64(r.Rating),
+				Comment:             safeNullString(r.Comment),
+				ReviewerCompanyName: safeNullString(r.ReviewerCompanyName),
+				ReviewerPicture:     safeNullString(r.ReviewerPicture),
+				Id:                  r.Id,
+			})
+		}
+		profileData.Reviews = reviewsWS
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		// Loguear el primer error que ocurrió en el grupo.
+		logger.Errorf("SERVICE_PROFILE", "Error obteniendo datos del perfil para UserID %d en errgroup: %v", userID, err)
 		return nil, err
 	}
 
-	userDTO := userData.ToUserDTO()
-
-	profileDto := &wsmodels.ProfileData{
-		ID:                 userDTO.Id,
-		FirstName:          userDTO.FirstName,
-		LastName:           userDTO.LastName,
-		UserName:           userDTO.UserName,
-		Email:              userDTO.Email,
-		Phone:              userDTO.Phone,
-		Sex:                userDTO.Sex,
-		DocId:              userDTO.DocId,
-		NationalityId:      userDTO.NationalityId,
-		NationalityName:    safeNullString(userData.NationalityName),
-		Birthdate:          userDTO.Birthdate,
-		Picture:            userDTO.Picture,
-		DegreeName:         safeNullString(userData.DegreeName),
-		UniversityName:     safeNullString(userData.UniversityName),
-		RoleID:             userDTO.RoleId,
-		RoleName:           safeNullString(userData.RoleName),
-		StatusAuthorizedId: userDTO.StatusAuthorizedId,
-		Summary:            userDTO.Summary,
-		Address:            userDTO.Address,
-		Github:             userDTO.Github,
-		Linkedin:           userDTO.Linkedin,
-		CreatedAt:          time.Time{},
-		UpdatedAt:          time.Time{},
-		Curriculum: wsmodels.CurriculumVitae{
-			// Inicializar slices vacíos para evitar `null` en JSON
-			Education:      []wsmodels.EducationItem{},
-			Experience:     []wsmodels.WorkExperienceItem{},
-			Certifications: []wsmodels.CertificationItem{},
-			Skills:         []wsmodels.SkillItem{},
-			Languages:      []wsmodels.LanguageItem{},
-			Projects:       []wsmodels.ProjectItem{},
-		},
+	// Asegurarse de que los slices no sean nulos para evitar `null` en JSON
+	if profileData.Curriculum.Education == nil {
+		profileData.Curriculum.Education = []wsmodels.EducationItem{}
+	}
+	if profileData.Curriculum.Experience == nil {
+		profileData.Curriculum.Experience = []wsmodels.WorkExperienceItem{}
+	}
+	if profileData.Curriculum.Certifications == nil {
+		profileData.Curriculum.Certifications = []wsmodels.CertificationItem{}
+	}
+	if profileData.Curriculum.Projects == nil {
+		profileData.Curriculum.Projects = []wsmodels.ProjectItem{}
+	}
+	if profileData.Curriculum.Skills == nil {
+		profileData.Curriculum.Skills = []wsmodels.SkillItem{}
+	}
+	if profileData.Curriculum.Languages == nil {
+		profileData.Curriculum.Languages = []wsmodels.LanguageItem{}
+	}
+	if profileData.Reviews == nil {
+		profileData.Reviews = []wsmodels.ReputationReviewItem{}
 	}
 
-	if userID == currentUserID {
-		profileDto.IsOnline = true
-	} else if manager != nil {
-		profileDto.IsOnline = manager.IsUserOnline(userID)
-	}
-
-	// Las queries ahora devuelven wsmodels directamente.
-	profileDto.Curriculum.Education, _ = queries.GetEducationForUser(userID)
-	profileDto.Curriculum.Experience, _ = queries.GetWorkExperienceForUser(userID)
-	profileDto.Curriculum.Certifications, _ = queries.GetCertificationsForUser(userID)
-	profileDto.Curriculum.Projects, _ = queries.GetProjectsForUser(userID)
-
-	// Skills y Languages todavía devuelven `models`, por lo que requieren mapeo.
-	skillItemsDB, _ := queries.GetSkillsForUser(userID)
-	for _, dbItem := range skillItemsDB {
-		profileDto.Curriculum.Skills = append(profileDto.Curriculum.Skills, wsmodels.SkillItem{
-			ID:    dbItem.Id,
-			Skill: dbItem.Skill,
-			Level: dbItem.Level,
-		})
-	}
-
-	languageItemsDB, _ := queries.GetLanguagesForUser(userID)
-	for _, dbItem := range languageItemsDB {
-		profileDto.Curriculum.Languages = append(profileDto.Curriculum.Languages, wsmodels.LanguageItem{
-			ID:       dbItem.Id,
-			Language: dbItem.Language,
-			Level:    dbItem.Level,
-		})
-	}
-
-	return profileDto, nil
+	return &profileData, nil
 }
 
 // formatNullTimeToString convierte sql.NullTime a una cadena con el formato especificado.
@@ -114,7 +216,7 @@ func formatNullTimeToString(nt sql.NullTime, layout string) string {
 	return ""
 }
 
-// Helper function to safely get string from sql.NullString
+// safeNullString convierte sql.NullString a string, devolviendo "" si es nulo.
 func safeNullString(ns sql.NullString) string {
 	if ns.Valid {
 		return ns.String
@@ -128,6 +230,13 @@ func safeNullInt64(ni sql.NullInt64) int64 {
 		return ni.Int64
 	}
 	return 0 // O el valor por defecto que consideres apropiado si NULL
+}
+
+func safeNullFloat64(nf sql.NullFloat64) float64 {
+	if nf.Valid {
+		return nf.Float64
+	}
+	return 0.0
 }
 
 // UpdateUserProfile llama a la capa de base de datos para actualizar el perfil de un usuario.
