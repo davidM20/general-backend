@@ -192,11 +192,12 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 		}
 
 		var recipientUserID int64
-		if userID == contact.User1Id {
+		switch userID {
+		case contact.User1Id:
 			recipientUserID = contact.User2Id
-		} else if userID == contact.User2Id {
+		case contact.User2Id:
 			recipientUserID = contact.User1Id
-		} else {
+		default:
 			logger.Errorf("SERVICE_CHAT", "El remitente del mensaje (UserID %d) no coincide con los participantes del ContactID %s (User1: %d, User2: %d)", userID, contact.ContactId, contact.User1Id, contact.User2Id)
 			return messageToSend, fmt.Errorf("mensaje guardado pero remitente no coincide con participantes del chat")
 		}

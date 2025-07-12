@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
@@ -14,8 +15,19 @@ const jobApplicationServiceComponent = "JOB_APPLICATION_SERVICE"
 // IJobApplication define la interfaz para el servicio de postulaciones.
 type IJobApplication interface {
 	ApplyToJob(eventID, applicantID int64, request models.JobApplicationCreateRequest) error
-	ListApplicants(eventID int64) ([]models.ApplicantProfile, error)
-	// TODO: Añadir métodos para cambiar estado, notificar, etc.
+	ListApplicants(eventID int64) ([]models.ApplicantInfo, error)
+	UpdateApplicationStatus(eventID, applicantID int64, newStatus string) error
+}
+
+var validStatuses = map[string]struct{}{
+	"ENVIADA":          {},
+	"EN_REVISION":      {},
+	"ENTREVISTA":       {},
+	"PRUEBA_TECNICA":   {},
+	"OFERTA_REALIZADA": {},
+	"APROBADA":         {},
+	"RECHAZADA":        {},
+	"RETIRADA":         {},
 }
 
 // JobApplicationService implementa la lógica de negocio para las postulaciones.
@@ -41,7 +53,7 @@ func (s *JobApplicationService) ApplyToJob(eventID, applicantID int64, request m
 }
 
 // ListApplicants devuelve la lista de postulantes para una oferta, ordenada por reputación.
-func (s *JobApplicationService) ListApplicants(eventID int64) ([]models.ApplicantProfile, error) {
+func (s *JobApplicationService) ListApplicants(eventID int64) ([]models.ApplicantInfo, error) {
 	rows, err := s.db.Query(queries.ListApplicantsByEvent, eventID)
 	if err != nil {
 		logger.Errorf(jobApplicationServiceComponent, "Error al listar postulantes para el evento %d: %v", eventID, err)
@@ -49,11 +61,11 @@ func (s *JobApplicationService) ListApplicants(eventID int64) ([]models.Applican
 	}
 	defer rows.Close()
 
-	var applicants []models.ApplicantProfile
+	var applicants []models.ApplicantInfo
 	for rows.Next() {
-		var app models.ApplicantProfile
+		var app models.ApplicantInfo
 		if err := rows.Scan(
-			&app.ApplicantId,
+			&app.ApplicantID,
 			&app.FirstName,
 			&app.LastName,
 			&app.Email,
@@ -74,4 +86,32 @@ func (s *JobApplicationService) ListApplicants(eventID int64) ([]models.Applican
 	}
 
 	return applicants, nil
+}
+
+// UpdateApplicationStatus actualiza el estado de una postulación.
+func (s *JobApplicationService) UpdateApplicationStatus(eventID, applicantID int64, newStatus string) error {
+	// Validar que el estado sea uno de los permitidos por el ENUM de la BD.
+	if _, ok := validStatuses[newStatus]; !ok {
+		return fmt.Errorf("estado de postulación no válido: %s", newStatus)
+	}
+
+	result, err := s.db.Exec(queries.UpdateJobApplicationStatus, newStatus, eventID, applicantID)
+	if err != nil {
+		logger.Errorf(jobApplicationServiceComponent, "Error al actualizar estado de postulación para evento %d y aplicante %d: %v", eventID, applicantID, err)
+		return fmt.Errorf("no se pudo actualizar el estado: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logger.Infof(jobApplicationServiceComponent, "Advertencia: No se pudo obtener el número de filas afectadas: %v", err)
+		return nil // No es un error fatal, la operación probablemente tuvo éxito.
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("no se encontró la postulación para actualizar o el estado ya era el mismo")
+	}
+
+	// TODO: Disparar una notificación al aplicante sobre el cambio de estado.
+	logger.Successf(jobApplicationServiceComponent, "Estado de postulación actualizado a '%s' para evento %d y aplicante %d", newStatus, eventID, applicantID)
+	return nil
 }

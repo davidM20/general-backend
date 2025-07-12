@@ -54,7 +54,13 @@ const (
 			AverageRating DESC,
 			ReputationScore DESC;
 	`
+
+	// UpdateJobApplicationStatus actualiza el estado de una postulación específica.
+	UpdateJobApplicationStatus = `
+		UPDATE JobApplication
+		SET Status = ?
+		WHERE CommunityEventId = ? AND ApplicantId = ?
+	`
 	// TODO: Añadir más queries según se necesiten, como:
-	// - UpdateJobApplicationStatus: Para cambiar el estado de una postulación.
 	// - GetJobApplicationByID: Para obtener los detalles de una postulación específica.
 )

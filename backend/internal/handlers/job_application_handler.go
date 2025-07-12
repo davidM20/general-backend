@@ -77,3 +77,37 @@ func (h *JobApplicationHandler) ListApplicants(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(applicants)
 }
+
+// UpdateApplicationStatus gestiona la solicitud para cambiar el estado de una postulación.
+func (h *JobApplicationHandler) UpdateApplicationStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventID, err := strconv.ParseInt(vars["eventID"], 10, 64)
+	if err != nil {
+		http.Error(w, "ID de evento inválido", http.StatusBadRequest)
+		return
+	}
+
+	applicantID, err := strconv.ParseInt(vars["applicantID"], 10, 64)
+	if err != nil {
+		http.Error(w, "ID de aplicante inválido", http.StatusBadRequest)
+		return
+	}
+
+	// TODO: Aquí se debería validar que el usuario que hace la petición
+	// es el creador del evento o un administrador.
+
+	var req models.UpdateApplicationStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Cuerpo de la solicitud inválido", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.service.UpdateApplicationStatus(eventID, applicantID, req.Status); err != nil {
+		logger.Errorf(jobApplicationHandlerComponent, "Error en el servicio al actualizar estado: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Estado de la postulación actualizado exitosamente"})
+}

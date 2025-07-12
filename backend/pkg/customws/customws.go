@@ -75,10 +75,6 @@ type ConnectionManager[TUserData any] struct {
 	callbacks Callbacks[TUserData]
 	upgrader  websocket.Upgrader
 
-	// connections almacena las conexiones activas, mapeando UserID a *Connection.
-	// Se usa sync.Map para concurrencia eficiente.
-	connections sync.Map // map[int64]*Connection[TUserData]
-
 	// pendingClientAcks almacena PIDs de mensajes enviados por el servidor que esperan un ClientAck.
 	// map[pid string]*types.PendingClientAck
 	pendingClientAcks sync.Map
@@ -192,21 +188,7 @@ func (cm *ConnectionManager[TUserData]) ServeHTTP(w http.ResponseWriter, r *http
 		cancel:   connCancel,
 	}
 
-	// Usar el mutex para modificar userConnections
-	cm.mu.Lock()
-	if cm.userConnections == nil {
-		cm.userConnections = make(map[int64][]*Connection[TUserData])
-	}
-	cm.userConnections[userID] = append(cm.userConnections[userID], connection)
-	cm.mu.Unlock()
-
-	if oldConn, loaded := cm.connections.LoadAndDelete(userID); loaded {
-		logger.Warnf(componentLog, "UserID %d ya tenía una conexión activa. Cerrando la anterior.", userID)
-		if oldC, ok := oldConn.(*Connection[TUserData]); ok {
-			oldC.Close()
-		}
-	}
-	cm.connections.Store(userID, connection)
+	cm.registerConnection(connection)
 
 	if cm.callbacks.OnConnect != nil {
 		if err := cm.callbacks.OnConnect(connection); err != nil {
@@ -365,22 +347,22 @@ func (c *Connection[TUserData]) writePump() {
 
 // unregisterConnection es llamado para limpiar una conexión del manager.
 func (cm *ConnectionManager[TUserData]) unregisterConnection(conn *Connection[TUserData], disconnectErr error) {
-	cm.connections.Delete(conn.ID)
 	close(conn.SendChan)
 
 	// Usar el mutex para modificar userConnections
 	cm.mu.Lock()
 	if conns, exists := cm.userConnections[conn.ID]; exists {
-		for i, c := range conns {
-			if c == conn {
-				// Eliminar esta conexión específica del slice
-				cm.userConnections[conn.ID] = append(conns[:i], conns[i+1:]...)
-				// Si el slice queda vacío, eliminar la entrada del mapa para limpiar
-				if len(cm.userConnections[conn.ID]) == 0 {
-					delete(cm.userConnections, conn.ID)
-				}
-				break // Asumiendo que una conexión solo aparece una vez por usuario
+		newConns := make([]*Connection[TUserData], 0, len(conns)-1)
+		for _, c := range conns {
+			if c != conn {
+				newConns = append(newConns, c)
 			}
+		}
+
+		if len(newConns) == 0 {
+			delete(cm.userConnections, conn.ID)
+		} else {
+			cm.userConnections[conn.ID] = newConns
 		}
 	}
 	cm.mu.Unlock()
@@ -390,6 +372,17 @@ func (cm *ConnectionManager[TUserData]) unregisterConnection(conn *Connection[TU
 	if cm.callbacks.OnDisconnect != nil {
 		cm.callbacks.OnDisconnect(conn, disconnectErr)
 	}
+}
+
+// registerConnection registra una nueva conexión en el manager.
+func (cm *ConnectionManager[TUserData]) registerConnection(conn *Connection[TUserData]) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.userConnections == nil {
+		cm.userConnections = make(map[int64][]*Connection[TUserData])
+	}
+	cm.userConnections[conn.ID] = append(cm.userConnections[conn.ID], conn)
+	logger.Infof(componentLog, "Nueva conexión registrada para UserID %d. Total de conexiones para el usuario: %d", conn.ID, len(cm.userConnections[conn.ID]))
 }
 
 // SendMessage encola un mensaje para ser enviado a este cliente específico.
@@ -521,24 +514,55 @@ func (cm *ConnectionManager[TUserData]) cleanupRoutine() {
 
 // GetConnection recupera una conexión activa por UserID.
 // Devuelve la conexión y un booleano indicando si se encontró.
+// DEPRECATED: Usar GetConnections en su lugar para soportar múltiples sesiones.
+// Esta función ahora devuelve la primera conexión encontrada.
 func (cm *ConnectionManager[TUserData]) GetConnection(userID int64) (*Connection[TUserData], bool) {
-	if conn, ok := cm.connections.Load(userID); ok {
-		if c, castOk := conn.(*Connection[TUserData]); castOk {
-			return c, true
-		}
-		logger.Errorf(componentLog, "GetConnection: Se encontró un tipo inesperado en el mapa de conexiones para UserID %d", userID)
-		cm.connections.Delete(userID) // Eliminar el dato corrupto
-		return nil, false
+	if conns, found := cm.GetConnections(userID); found {
+		return conns[0], true
 	}
 	return nil, false
 }
 
+// GetConnections recupera todas las conexiones activas para un UserID.
+func (cm *ConnectionManager[TUserData]) GetConnections(userID int64) ([]*Connection[TUserData], bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	conns, found := cm.userConnections[userID]
+	if !found || len(conns) == 0 {
+		return nil, false
+	}
+	// Devolver una copia para evitar modificaciones concurrentes del slice subyacente.
+	connsCopy := make([]*Connection[TUserData], len(conns))
+	copy(connsCopy, conns)
+	return connsCopy, true
+}
+
 // SendMessageToUser envía un mensaje a un usuario específico si está conectado.
 func (cm *ConnectionManager[TUserData]) SendMessageToUser(userID int64, msg types.ServerToClientMessage) error {
-	if conn, found := cm.GetConnection(userID); found {
-		return conn.SendMessage(msg)
+	conns, found := cm.GetConnections(userID)
+	if !found {
+		return fmt.Errorf("usuario %d no conectado o no encontrado", userID)
 	}
-	return fmt.Errorf("usuario %d no conectado o no encontrado", userID)
+
+	var lastErr error
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, conn := range conns {
+		wg.Add(1)
+		go func(c *Connection[TUserData]) {
+			defer wg.Done()
+			if err := c.SendMessage(msg); err != nil {
+				mu.Lock()
+				lastErr = err
+				mu.Unlock()
+				logger.Errorf(componentLog, "SendMessageToUser: Error enviando a UserID %d: %v", c.ID, err)
+			}
+		}(conn)
+	}
+	wg.Wait()
+
+	return lastErr
 }
 
 // BroadcastToAll envía un mensaje a todas las conexiones activas.
@@ -554,26 +578,27 @@ func (cm *ConnectionManager[TUserData]) BroadcastToAll(msg types.ServerToClientM
 		excludeSet[id] = struct{}{}
 	}
 
-	cm.connections.Range(func(key, value interface{}) bool {
-		userID := key.(int64)
-		conn := value.(*Connection[TUserData])
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
 
+	for userID, conns := range cm.userConnections {
 		if _, excluded := excludeSet[userID]; excluded {
-			return true // Continuar iterando, pero no enviar a este usuario
+			continue // Continuar iterando, pero no enviar a este usuario
 		}
 
-		wg.Add(1)
-		go func(c *Connection[TUserData], m types.ServerToClientMessage) {
-			defer wg.Done()
-			if err := c.SendMessage(m); err != nil {
-				mu.Lock()
-				errorsMap[c.ID] = err
-				mu.Unlock()
-				logger.Errorf(componentLog, "BroadcastToAll: Error enviando a UserID %d: %v", c.ID, err)
-			}
-		}(conn, msg) // Pasar una copia de msg si se modifica o si la goroutine vive mucho tiempo
-		return true // Continuar iterando
-	})
+		for _, conn := range conns {
+			wg.Add(1)
+			go func(c *Connection[TUserData], m types.ServerToClientMessage) {
+				defer wg.Done()
+				if err := c.SendMessage(m); err != nil {
+					mu.Lock()
+					errorsMap[c.ID] = err
+					mu.Unlock()
+					logger.Errorf(componentLog, "BroadcastToAll: Error enviando a UserID %d: %v", c.ID, err)
+				}
+			}(conn, msg) // Pasar una copia de msg si se modifica o si la goroutine vive mucho tiempo
+		}
+	}
 
 	wg.Wait() // Esperar a que todos los envíos (goroutines) terminen
 	return errorsMap
@@ -596,17 +621,19 @@ func (cm *ConnectionManager[TUserData]) BroadcastToUsers(userIDs []int64, msg ty
 			continue
 		}
 
-		if conn, found := cm.GetConnection(userID); found {
-			wg.Add(1)
-			go func(c *Connection[TUserData], m types.ServerToClientMessage) {
-				defer wg.Done()
-				if err := c.SendMessage(m); err != nil {
-					mu.Lock()
-					errorsMap[c.ID] = err
-					mu.Unlock()
-					logger.Errorf(componentLog, "BroadcastToUsers: Error enviando a UserID %d: %v", c.ID, err)
-				}
-			}(conn, msg)
+		if conns, found := cm.GetConnections(userID); found {
+			for _, conn := range conns {
+				wg.Add(1)
+				go func(c *Connection[TUserData], m types.ServerToClientMessage) {
+					defer wg.Done()
+					if err := c.SendMessage(m); err != nil {
+						mu.Lock()
+						errorsMap[c.ID] = err
+						mu.Unlock()
+						logger.Errorf(componentLog, "BroadcastToUsers: Error enviando a UserID %d: %v", c.ID, err)
+					}
+				}(conn, msg)
+			}
 		} else {
 			mu.Lock()
 			errorsMap[userID] = errors.New("usuario no conectado")
@@ -734,12 +761,15 @@ func (cm *ConnectionManager[TUserData]) Shutdown(ctx context.Context) error {
 	// Cerrar todas las conexiones activas.
 	// Esto señalará a sus readPump/writePump que deben terminar a través de conn.ctx.Done().
 	var wg sync.WaitGroup
-	cm.connections.Range(func(key, value interface{}) bool {
-		conn, ok := value.(*Connection[TUserData])
-		if !ok {
-			logger.Errorf(componentLog, "Shutdown: Tipo inesperado en connections map para key %v", key)
-			return true
-		}
+
+	cm.mu.RLock()
+	allConns := make([]*Connection[TUserData], 0)
+	for _, userConns := range cm.userConnections {
+		allConns = append(allConns, userConns...)
+	}
+	cm.mu.RUnlock()
+
+	for _, conn := range allConns {
 		wg.Add(1)
 		go func(c *Connection[TUserData]) {
 			defer wg.Done()
@@ -747,8 +777,7 @@ func (cm *ConnectionManager[TUserData]) Shutdown(ctx context.Context) error {
 			c.Close() // Esto llama a c.cancel() y c.conn.Close()
 			// La unregisterConnection se llamará desde el defer de readPump.
 		}(conn)
-		return true
-	})
+	}
 
 	// Esperar a que todas las goroutines de cierre de conexión terminen o haya timeout.
 	shutdownComplete := make(chan struct{})
@@ -815,16 +844,33 @@ func (cm *ConnectionManager[TUserData]) HandlePeerToPeerMessage(fromConn *Connec
 	}
 
 	// Obtener la conexión del destinatario
-	toConn, found := cm.GetConnection(toUserID)
+	toConns, found := cm.GetConnections(toUserID)
 	if !found {
-		return fmt.Errorf("no se encontró conexión para usuario %d", toUserID)
+		// Esto no debería ocurrir si IsUserOnline devolvió true, pero es una buena práctica verificar.
+		return fmt.Errorf("no se encontró conexión para usuario %d aunque se reportó como en línea", toUserID)
 	}
 
-	// Enviar el mensaje al destinatario
-	err := toConn.SendMessage(msg)
-	if err != nil {
-		logger.Errorf(componentLog, "Error enviando mensaje de UserID %d a UserID %d: %v", fromConn.ID, toUserID, err)
-		return fmt.Errorf("error enviando mensaje: %w", err)
+	var lastErr error
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	// Enviar el mensaje a todas las conexiones del destinatario
+	for _, toConn := range toConns {
+		wg.Add(1)
+		go func(c *Connection[TUserData]) {
+			defer wg.Done()
+			if err := c.SendMessage(msg); err != nil {
+				mu.Lock()
+				lastErr = err
+				mu.Unlock()
+				logger.Errorf(componentLog, "Error enviando mensaje de UserID %d a UserID %d: %v", fromConn.ID, toUserID, err)
+			}
+		}(toConn)
+	}
+	wg.Wait()
+
+	if lastErr != nil {
+		return fmt.Errorf("error enviando mensaje: %w", lastErr)
 	}
 
 	logger.Infof(componentLog, "Mensaje enviado exitosamente de UserID %d a UserID %d", fromConn.ID, toUserID)

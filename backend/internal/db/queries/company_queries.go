@@ -32,18 +32,43 @@ func GetCompanyProfile(userID int64) (*models.CompanyProfile, error) {
 		return nil, fmt.Errorf("error al obtener perfil de empresa: %w", err)
 	}
 
-	profile.ContactEmail = contactEmail.String
-	profile.RIF = rif.String
-	profile.Sector = sector.String
-	profile.Location = location.String
-	profile.Address = address.String
-	profile.Summary = summary.String
-	profile.Phone = phone.String
-	profile.Github = github.String
-	profile.Linkedin = linkedin.String
-	profile.Twitter = twitter.String
-	profile.Facebook = facebook.String
-	profile.Picture = picture.String
+	// Solo asignar valores cuando son válidos (no NULL)
+	if contactEmail.Valid {
+		profile.ContactEmail = contactEmail.String
+	}
+	if rif.Valid {
+		profile.RIF = rif.String
+	}
+	if sector.Valid {
+		profile.Sector = sector.String
+	}
+	if location.Valid {
+		profile.Location = location.String
+	}
+	if address.Valid {
+		profile.Address = address.String
+	}
+	if summary.Valid {
+		profile.Summary = summary.String
+	}
+	if phone.Valid {
+		profile.Phone = phone.String
+	}
+	if github.Valid {
+		profile.Github = github.String
+	}
+	if linkedin.Valid {
+		profile.Linkedin = linkedin.String
+	}
+	if twitter.Valid {
+		profile.Twitter = twitter.String
+	}
+	if facebook.Valid {
+		profile.Facebook = facebook.String
+	}
+	if picture.Valid {
+		profile.Picture = picture.String
+	}
 	if foundationYear.Valid {
 		val := int(foundationYear.Int32)
 		profile.FoundationYear = &val
@@ -73,13 +98,18 @@ func GetEventsForCompany(companyID int64) ([]models.CompanyEvent, error) {
 		var event models.CompanyEvent
 		var imageUrl sql.NullString
 		var eventDate sql.NullTime
-		if err := rows.Scan(&event.ID, &event.Title, &event.Description, &eventDate, &event.Location, &imageUrl, &event.CreatedAt, &event.UpdatedAt); err != nil {
+		var location sql.NullString
+		if err := rows.Scan(&event.ID, &event.Title, &event.Description, &eventDate, &location, &imageUrl, &event.CreatedAt, &event.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("error al escanear evento: %w", err)
 		}
 		event.EventDate = models.NullTime{NullTime: eventDate}
 
 		if imageUrl.Valid {
 			event.ImageURL = imageUrl.String
+		}
+
+		if location.Valid {
+			event.Location = location.String
 		}
 
 		events = append(events, event)

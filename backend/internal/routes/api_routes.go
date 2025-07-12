@@ -117,8 +117,12 @@ const (
 	MyCommunityEventsPath = CommunityEventsPath + "/my-events"
 
 	// Rutas de Postulaciones (Job Applications)
-	ApplyToEventPath        = CommunityEventsPath + "/{eventID:[0-9]+}/apply"
-	ListEventApplicantsPath = CommunityEventsPath + "/{eventID:[0-9]+}/applicants"
+	ApplyToEventPath          = CommunityEventsPath + "/{eventID:[0-9]+}/apply"
+	ListEventApplicantsPath   = CommunityEventsPath + "/{eventID:[0-9]+}/applicants"
+	UpdateApplicantStatusPath = ListEventApplicantsPath + "/{applicantID:[0-9]+}/status"
+
+	// Rutas de Reputación
+	ReviewsPath = "/reviews"
 
 	// Rutas de Notificaciones
 	NotificationsPath          = "/notifications"
@@ -196,6 +200,10 @@ func SetupApiRoutes(r *mux.Router, db *sql.DB, cfg *config.Config) {
 	// Rutas de Postulaciones
 	setupProtectedRoute(protected, ApplyToEventPath, handlers.jobApplicationHandler.ApplyToJob, http.MethodPost)
 	setupProtectedRoute(protected, ListEventApplicantsPath, handlers.jobApplicationHandler.ListApplicants, http.MethodGet)
+	setupProtectedRoute(protected, UpdateApplicantStatusPath, handlers.jobApplicationHandler.UpdateApplicationStatus, http.MethodPatch)
+
+	// Rutas de Reputación
+	setupProtectedRoute(protected, ReviewsPath, handlers.reputationHandler.CreateReview, http.MethodPost)
 
 	// Rutas de Notificaciones
 	setupProtectedRoute(protected, MarkNotificationAsReadPath, handlers.notificationHandler.MarkAsRead, http.MethodPut)
@@ -225,6 +233,7 @@ type serviceHandlers struct {
 	adminHandler          *handlers.AdminHandler
 	notificationHandler   *handlers.NotificationHandler
 	jobApplicationHandler *handlers.JobApplicationHandler
+	reputationHandler     *handlers.ReputationHandler
 }
 
 // initializeHandlers crea e inicializa todas las instancias de handlers necesarias
@@ -236,6 +245,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 	videoUploadService := services.NewVideoUploadService(db, cfg)
 	searchService := services.NewSearchService(db)
 	jobApplicationService := services.NewJobApplicationService(db)
+	reputationService := services.NewReputationService(db)
 
 	return serviceHandlers{
 		authHandler:           handlers.NewAuthHandler(db, cfg),
@@ -253,6 +263,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		adminHandler:          handlers.NewAdminHandler(db, cfg),
 		notificationHandler:   handlers.NewNotificationHandler(db),
 		jobApplicationHandler: handlers.NewJobApplicationHandler(jobApplicationService),
+		reputationHandler:     handlers.NewReputationHandler(reputationService),
 	}
 }
 
