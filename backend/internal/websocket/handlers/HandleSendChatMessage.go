@@ -73,12 +73,16 @@ func HandleSendChatMessage(conn *customws.Connection[wsmodels.WsUserData], msg t
 	// Por ahora, mantenemos la firma de ProcessAndSaveChatMessage.
 	servicePayload := map[string]interface{}{
 		"chatId":           payload.ChatId,
-		"text":             payload.Text, // Para compatibilidad futura
-		"content":          payload.Text, // Clave que espera el servicio
-		"mediaId":          payload.MediaId,
+		"content":          payload.Text,       // Clave que espera el servicio
 		"replyToMessageId": payload.ResponseTo, // unificar nomenclatura
-		// typeMessageId podría pasarse o dejarse que el servicio lo determine
 	}
+
+	// Solo añadir mediaId si no está vacío para evitar problemas de FK
+	if payload.MediaId != "" {
+		servicePayload["mediaId"] = payload.MediaId
+	}
+
+	// typeMessageId podría pasarse o dejarse que el servicio lo determine
 	if payload.TypeMessageId != 0 {
 		servicePayload["typeMessageId"] = payload.TypeMessageId
 	}

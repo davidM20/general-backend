@@ -1,11 +1,13 @@
 package queries
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time" // Necesario para UpdateMultimediaVariants si se actualiza CreateAt o similar
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
+
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
 )
 
@@ -200,7 +202,7 @@ func GetMultimediaByContentID(db *sql.DB, contentID string) (*models.Multimedia,
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logger.Warnf("GetMultimediaByContentID.Scan", "No se encontró multimedia con ContentID %s", contentID)
-			return nil, fmt.Errorf("multimedia no encontrada: %w", err) // Devolver err para que el servicio lo maneje como 404
+			return nil, fmt.Errorf("multimedia no encontrada: %w", err)
 		}
 		logger.Errorf("GetMultimediaByContentID.Scan", "Error escaneando multimedia para ContentID %s: %v", contentID, err)
 		return nil, fmt.Errorf("error escaneando multimedia: %w", err)
@@ -208,4 +210,35 @@ func GetMultimediaByContentID(db *sql.DB, contentID string) (*models.Multimedia,
 
 	logger.Infof("GetMultimediaByContentID", "Multimedia recuperada para ContentID: %s", contentID)
 	return m, nil
+}
+
+// GetMultimedia busca un registro de multimedia por su ID o por su FileName usando una única consulta.
+// El handler que llama a esta función se asegura de que solo uno de los dos parámetros (id o filename) no esté vacío.
+func GetMultimedia(ctx context.Context, db *sql.DB, id, filename string) (*models.Multimedia, error) {
+	query := `
+        SELECT
+            Id, Type, Ratio, UserId, FileName, CreateAt, ContentId, ChatId, Size,
+            ProcessingStatus, Duration, HLSManifestBaseURL, HLSManifest1080p,
+            HLSManifest720p, HLSManifest480p
+        FROM Multimedia
+        WHERE Id = ? OR FileName = ?
+    `
+
+	row := db.QueryRowContext(ctx, query, id, filename)
+	var m models.Multimedia
+
+	err := row.Scan(
+		&m.Id, &m.Type, &m.Ratio, &m.UserId, &m.FileName, &m.CreateAt, &m.ContentId, &m.ChatId, &m.Size,
+		&m.ProcessingStatus, &m.Duration, &m.HLSManifestBaseURL, &m.HLSManifest1080p,
+		&m.HLSManifest720p, &m.HLSManifest480p,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("multimedia no encontrado con id '%s' o filename '%s'", id, filename)
+		}
+		return nil, fmt.Errorf("error al escanear multimedia: %w", err)
+	}
+
+	return &m, nil
 }

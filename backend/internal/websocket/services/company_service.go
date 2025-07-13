@@ -27,15 +27,15 @@ func GetCompleteCompanyProfile(userID int64) (*models.CompleteCompanyProfile, er
 	})
 
 	// 2. Obtener los eventos de la empresa
-	g.Go(func() error {
-		events, err := queries.GetEventsForCompany(userID)
-		if err != nil {
-			logger.Warnf("COMPANY_SERVICE", "Error obteniendo eventos para CompanyID %d: %v", userID, err)
-			return nil // No es un error fatal, se puede mostrar el perfil sin eventos
-		}
-		completeProfile.Events = events
-		return nil
-	})
+	// g.Go(func() error {
+	// 	events, err := queries.GetEventsForCompany(userID)
+	// 	if err != nil {
+	// 		logger.Warnf("COMPANY_SERVICE", "Error obteniendo eventos para CompanyID %d: %v", userID, err)
+	// 		return nil // No es un error fatal, se puede mostrar el perfil sin eventos
+	// 	}
+	// 	completeProfile.Events = events
+	// 	return nil
+	// })
 
 	// 3. Obtener las estadísticas de reputación
 	g.Go(func() error {

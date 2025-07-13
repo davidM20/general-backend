@@ -107,17 +107,33 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 	}
 
 	content, _ := payload["content"].(string)
-	mediaId, _ := payload["mediaId"].(string)
+	mediaId, _ := payload["mediaId"].(string) // Este es el FileName
 	replyToMessageId, _ := payload["replyToMessageId"].(string)
 
+	var realMediaId string
+	var err error
+	if mediaId != "" {
+		// Buscar el ID real del multimedia a partir del FileName
+		query := "SELECT Id FROM Multimedia WHERE FileName = ?"
+		err = chatDB.QueryRow(query, mediaId).Scan(&realMediaId)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				logger.Warnf("SERVICE_CHAT", "Multimedia con FileName %s no encontrado para UserID %d", mediaId, userID)
+				return nil, fmt.Errorf("multimedia no encontrado con FileName: %s", mediaId)
+			}
+			logger.Errorf("SERVICE_CHAT", "Error buscando media por FileName para UserID %d: %v", userID, err)
+			return nil, fmt.Errorf("error interno al buscar multimedia: %w", err)
+		}
+	}
+
 	// Un mensaje debe tener contenido de texto o un adjunto.
-	if content == "" && mediaId == "" {
+	if content == "" && realMediaId == "" {
 		return nil, errors.New("el mensaje no puede estar vacío, debe contener contenido o media")
 	}
 
 	// Determinar TypeMessageId basado en si hay MediaId o no.
 	var typeMessageID int64 = 1 // Por defecto, texto
-	if mediaId != "" {
+	if realMediaId != "" {
 		typeMessageID = 2 // Asumimos 2 para mensajes con media.
 	}
 
@@ -129,12 +145,12 @@ func ProcessAndSaveChatMessage(userID int64, payload map[string]interface{}, mes
 	dbChatId := sql.NullString{String: chatId, Valid: chatId != ""}
 	dbChatIdGroup := sql.NullString{String: chatIdGroup, Valid: chatIdGroup != ""}
 	dbContent := sql.NullString{String: content, Valid: content != ""}
-	dbMediaId := sql.NullString{String: mediaId, Valid: mediaId != ""}
+	dbMediaId := sql.NullString{String: realMediaId, Valid: realMediaId != ""}
 	dbReplyToId := sql.NullString{String: replyToMessageId, Valid: replyToMessageId != ""}
 
 	query := `INSERT INTO Message (Id, ChatId, ChatIdGroup, SenderId, Content, Status, TypeMessageId, MediaId, ReplyToMessageId, SentAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := chatDB.Exec(query, messageID, dbChatId, dbChatIdGroup, userID, dbContent, status, typeMessageID, dbMediaId, dbReplyToId, sentAt)
+	_, err = chatDB.Exec(query, messageID, dbChatId, dbChatIdGroup, userID, dbContent, status, typeMessageID, dbMediaId, dbReplyToId, sentAt)
 	if err != nil {
 		logContext := fmt.Sprintf("UserID %d", userID)
 		if chatId != "" {

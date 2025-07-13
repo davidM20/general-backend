@@ -412,14 +412,16 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 	offset := (page - 1) * pageSize
 	query := `
         SELECT 
-            Id, PostType, Title, Description, ImageUrl, ContentUrl, LinkPreviewTitle, 
-            LinkPreviewDescription, LinkPreviewImage, EventDate, Location, Capacity, Price,
-            ChallengeStartDate, ChallengeEndDate, ChallengeDifficulty, ChallengePrize, ChallengeStatus,
-            Tags, OrganizerCompanyName, OrganizerUserId, OrganizerLogoUrl,
-            CreatedByUserId, CreatedAt, UpdatedAt
-        FROM CommunityEvent 
-        WHERE CreatedByUserId = ?
-        ORDER BY EventDate DESC
+            ce.Id, ce.PostType, ce.Title, ce.Description, ce.ImageUrl, ce.ContentUrl, ce.LinkPreviewTitle, 
+            ce.LinkPreviewDescription, ce.LinkPreviewImage, ce.EventDate, ce.Location, ce.Capacity, ce.Price,
+            ce.ChallengeStartDate, ce.ChallengeEndDate, ce.ChallengeDifficulty, ce.ChallengePrize, ce.ChallengeStatus,
+            ce.Tags, ce.OrganizerCompanyName, ce.OrganizerUserId, ce.OrganizerLogoUrl,
+            ce.CreatedByUserId, ce.CreatedAt, ce.UpdatedAt,
+            -- Subconsulta para verificar si existen postulaciones para este evento
+            EXISTS(SELECT 1 FROM JobApplication ja WHERE ja.CommunityEventId = ce.Id) AS HasApplicants
+        FROM CommunityEvent ce
+        WHERE ce.CreatedByUserId = ?
+        ORDER BY ce.EventDate DESC
         LIMIT ? OFFSET ?`
 
 	rows, err := db.Query(query, userID, pageSize, offset)
@@ -459,6 +461,8 @@ func GetMyCommunityEvents(db *sql.DB, userID int64, page, pageSize int) (*models
 			&event.CreatedByUserId,
 			&event.CreatedAt,
 			&event.UpdatedAt,
+			// Escanear el nuevo campo booleano
+			&event.HasApplicants,
 		)
 		if err != nil {
 			logger.Errorf("COMMUNITY_EVENT_QUERIES", "Error scanning community event row for user ID %d: %v", userID, err)

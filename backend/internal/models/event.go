@@ -46,6 +46,16 @@ type EventMetadata struct {
 	RequestMessage string `json:"requestMessage,omitempty"`
 	ContactId      string `json:"contactId,omitempty"`
 
+	// --- NUEVO CAMPO ---
+	// ID del evento comunitario asociado a la notificación (ej. para una reseña).
+	CommunityEventId int64 `json:"communityEventId,omitempty"`
+
+	// IDs de los involucrados en una reseña, para facilitar el acceso en el cliente.
+	// Quién emite la reseña (puede ser una empresa o un estudiante).
+	ReviewerId int64 `json:"reviewerId,omitempty"`
+	// Quién recibe la reseña.
+	RevieweeId int64 `json:"revieweeId,omitempty"`
+
 	// Para eventos del sistema
 	SystemEventType string `json:"systemEventType,omitempty"`
 	AdditionalData  any    `json:"additionalData,omitempty"`

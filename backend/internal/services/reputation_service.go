@@ -44,10 +44,10 @@ func (s *ReputationService) CreateReview(reviewerID int64, req models.CreateRevi
 	// TODO: Idealmente, esto usaría sqlc para una mayor seguridad de tipos.
 	// Por ahora, se usa una consulta directa.
 	query := `
-        INSERT INTO ReputationReview (ReviewerId, RevieweeId, PointsRP, Rating, Comment, InteractionType)
-        VALUES (?, ?, ?, ?, ?, ?)`
+        INSERT INTO ReputationReview (ReviewerId, RevieweeId, CommunityEventId, PointsRP, Rating, Comment, InteractionType)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := s.db.Exec(query, reviewerID, req.RevieweeID, pointsRP, req.Rating, req.Comment, req.InteractionType)
+	_, err := s.db.Exec(query, reviewerID, req.RevieweeID, req.CommunityEventId, pointsRP, req.Rating, req.Comment, req.InteractionType)
 	if err != nil {
 		logger.Errorf(reputationServiceComponent, "Error al insertar la reseña en la base de datos: %v", err)
 		return fmt.Errorf("error interno al guardar la reseña: %w", err)

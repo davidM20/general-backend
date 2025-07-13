@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/auth"
 	"github.com/davidM20/micro-service-backend-go.git/internal/config"
+	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/middleware"
 	"github.com/davidM20/micro-service-backend-go.git/internal/services"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
@@ -21,20 +23,19 @@ import (
  * HANDLER PARA LA SUBIDA Y VISUALIZACIÓN DE IMÁGENES
  * ===================================================
  *
- * Este handler gestiona las solicitudes HTTP para subir y visualizar imágenes.
- * Extrae el archivo de la solicitud, obtiene el ID de usuario autenticado
- * y llama al ImageUploadService para procesar y guardar la imagen.
+ * Este handler es responsable de la lógica de negocio relacionada con las imágenes.
  */
 
 // ImageHandler maneja las solicitudes de subida y visualización de imágenes.
 type ImageHandler struct {
 	imageService *services.ImageUploadService
 	cfg          *config.Config // Añadido para acceder a la configuración (ej. JWT secret, GCS bucket)
+	db           *sql.DB
 }
 
 // NewImageHandler crea una nueva instancia de ImageHandler.
-func NewImageHandler(imageService *services.ImageUploadService, cfg *config.Config) *ImageHandler {
-	return &ImageHandler{imageService: imageService, cfg: cfg}
+func NewImageHandler(imageService *services.ImageUploadService, cfg *config.Config, db *sql.DB) *ImageHandler {
+	return &ImageHandler{imageService: imageService, cfg: cfg, db: db}
 }
 
 // UploadImage es el método que maneja la petición POST para subir una imagen.
@@ -353,5 +354,37 @@ func (h *ImageHandler) ViewImage(w http.ResponseWriter, r *http.Request) {
 		// Es posible que los headers ya se hayan enviado, por lo que es difícil enviar un error JSON aquí.
 		// El cliente podría recibir una respuesta truncada.
 		return
+	}
+}
+
+// GetMultimediaInfo maneja la solicitud GET para obtener los metadatos de un archivo multimedia
+// utilizando el ID o el FileName como parámetro de consulta.
+func (h *ImageHandler) GetMultimediaInfo(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	filename := r.URL.Query().Get("filename")
+
+	if (id == "" && filename == "") || (id != "" && filename != "") {
+		logger.Warn("GetMultimediaInfo.Params", "Se debe proporcionar 'id' o 'filename', pero no ambos.")
+		http.Error(w, `{"error": "Debe proporcionar 'id' o 'filename' como parámetro de consulta, pero no ambos."}`, http.StatusBadRequest)
+		return
+	}
+
+	multimedia, err := queries.GetMultimedia(r.Context(), h.db, id, filename)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "no encontrado") {
+			logger.Warnf("GetMultimediaInfo.NotFound", "No se encontró multimedia: %v", err)
+			http.Error(w, `{"error": "Recurso no encontrado."}`, http.StatusNotFound)
+		} else {
+			logger.Errorf("GetMultimediaInfo.DBError", "Error al obtener multimedia: %v", err)
+			http.Error(w, `{"error": "Error interno del servidor."}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(multimedia); err != nil {
+		logger.Errorf("GetMultimediaInfo.JSONError", "Error al codificar la respuesta JSON: %v", err)
 	}
 }

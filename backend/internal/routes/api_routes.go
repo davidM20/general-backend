@@ -112,7 +112,7 @@ func initializeHandlers(db *sql.DB, cfg *config.Config) serviceHandlers {
 		mediaHandler:          handlers.NewMediaHandler(db, cfg),
 		categoryHandler:       handlers.NewCategoryHandler(),
 		communityEventHandler: handlers.NewCommunityEventHandler(db, cfg),
-		imageHandler:          handlers.NewImageHandler(imageUploadService, cfg),
+		imageHandler:          handlers.NewImageHandler(imageUploadService, cfg, db),
 		audioHandler:          handlers.NewAudioHandler(audioUploadService, cfg),
 		pdfHandler:            handlers.NewPDFHandler(pdfUploadService, cfg),
 		videoHandler:          handlers.NewVideoHandler(videoUploadService, db, cfg),

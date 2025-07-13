@@ -6,6 +6,10 @@ type CreateReviewRequest struct {
 	// ID del usuario que está siendo calificado.
 	RevieweeID int64 `json:"revieweeId"`
 
+	// ID del evento comunitario (oferta, desafío, etc.) que origina esta reseña.
+	// Es obligatorio para vincular la reseña a un contexto específico.
+	CommunityEventId int64 `json:"communityEventId"`
+
 	// Calificación en formato de estrellas, de 0 a 5.
 	// Se permite un decimal para calificaciones como 4.5.
 	Rating float64 `json:"rating"`

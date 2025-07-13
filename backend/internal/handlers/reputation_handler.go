@@ -76,6 +76,15 @@ func (h *ReputationHandler) CreateReview(w http.ResponseWriter, r *http.Request)
 
 	logger.Infof(reputationHandlerComponent, "Solicitud de revisión decodificada exitosamente: %+v", req)
 
+	// --- VALIDACIÓN ADICIONAL ---
+	// Validar que el CommunityEventId se haya proporcionado.
+	if req.CommunityEventId == 0 {
+		errorMessage := "El campo 'communityEventId' es obligatorio."
+		logger.Error(reputationHandlerComponent, errorMessage)
+		http.Error(w, errorMessage, http.StatusBadRequest)
+		return
+	}
+
 	// Validar que el usuario no intente calificarse a sí mismo.
 	if reviewerID == req.RevieweeID {
 		errorMessage := fmt.Sprintf("Un usuario no puede calificarse a sí mismo. ReviewerID: %d, RevieweeID: %d", reviewerID, req.RevieweeID)
@@ -103,6 +112,20 @@ func (h *ReputationHandler) CreateReview(w http.ResponseWriter, r *http.Request)
 		companyName = "Una empresa"
 	}
 
+	// --- LÓGICA DE NOTIFICACIÓN ACTUALIZADA ---
+	// Crear metadatos para la notificación, incluyendo el ID del evento comunitario.
+	metadata := models.EventMetadata{
+		CommunityEventId: req.CommunityEventId,
+		ReviewerId:       reviewerID,     // La empresa que califica
+		RevieweeId:       req.RevieweeID, // El estudiante calificado
+	}
+	metadataJson, err := json.Marshal(metadata)
+	if err != nil {
+		// Este error es interno del servidor, no debería fallar.
+		logger.Errorf(reputationHandlerComponent, "Error al serializar los metadatos de la notificación: %v", err)
+		// No bloqueamos la operación principal, pero es un problema grave.
+	}
+
 	// Crear la notificación para que el usuario calificado pueda valorar a la empresa.
 	notification := models.Event{
 		EventType:      "COMPANY_REVIEW_PENDING",
@@ -111,6 +134,7 @@ func (h *ReputationHandler) CreateReview(w http.ResponseWriter, r *http.Request)
 		UserId:         req.RevieweeID,                                // Notificación PARA el usuario calificado.
 		OtherUserId:    sql.NullInt64{Int64: reviewerID, Valid: true}, // Notificación se refiere a esta empresa.
 		ActionRequired: true,                                          // El usuario debe realizar una acción.
+		Metadata:       metadataJson,                                  // Adjuntar metadatos.
 	}
 
 	if err := queries.CreateEvent(&notification); err != nil {
@@ -146,6 +170,15 @@ func (h *ReputationHandler) CreateReviewByStudent(w http.ResponseWriter, r *http
 	}
 	logger.Infof(reputationHandlerComponent, "Solicitud de reseña de estudiante decodificada: %+v", req)
 
+	// --- VALIDACIÓN ADICIONAL ---
+	// Validar que el CommunityEventId se haya proporcionado.
+	if req.CommunityEventId == 0 {
+		errorMessage := "El campo 'communityEventId' es obligatorio."
+		logger.Error(reputationHandlerComponent, errorMessage)
+		http.Error(w, errorMessage, http.StatusBadRequest)
+		return
+	}
+
 	// Validar que el estudiante no intente calificarse a sí mismo.
 	if studentID == req.RevieweeID {
 		errorMessage := "Un estudiante no puede calificarse a sí mismo."
@@ -175,6 +208,18 @@ func (h *ReputationHandler) CreateReviewByStudent(w http.ResponseWriter, r *http
 		}
 	}
 
+	// --- LÓGICA DE NOTIFICACIÓN ACTUALIZADA ---
+	// Crear metadatos para la notificación.
+	metadata := models.EventMetadata{
+		CommunityEventId: req.CommunityEventId,
+		ReviewerId:       studentID,      // El estudiante que califica
+		RevieweeId:       req.RevieweeID, // La empresa calificada
+	}
+	metadataJson, err := json.Marshal(metadata)
+	if err != nil {
+		logger.Errorf(reputationHandlerComponent, "Error al serializar los metadatos de la notificación del estudiante: %v", err)
+	}
+
 	// Crear la notificación para la empresa que fue calificada.
 	notification := models.Event{
 		EventType:      "REVIEW_CREATED_BY_STUDENT",
@@ -183,6 +228,7 @@ func (h *ReputationHandler) CreateReviewByStudent(w http.ResponseWriter, r *http
 		UserId:         req.RevieweeID,                               // Notificación PARA la empresa calificada.
 		OtherUserId:    sql.NullInt64{Int64: studentID, Valid: true}, // Notificación DESDE el estudiante.
 		ActionRequired: false,                                        // Es solo informativa.
+		Metadata:       metadataJson,                                 // Adjuntar metadatos.
 	}
 
 	if err := queries.CreateEvent(&notification); err != nil {

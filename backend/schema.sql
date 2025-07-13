@@ -205,14 +205,21 @@ FOREIGN KEY (AdminOfGroup) REFERENCES User(Id)
 );
 
 CREATE TABLE IF NOT EXISTS Multimedia (
-Id VARCHAR(255) PRIMARY KEY,
-Type VARCHAR(255),
-Ratio FLOAT,
-UserId BIGINT,
-FileName VARCHAR(255),
-CreateAt DATE,
-ContentId VARCHAR(255),
-ChatId VARCHAR(255)
+    Id VARCHAR(255) PRIMARY KEY,
+    Type VARCHAR(255),
+    Ratio FLOAT,
+    UserId BIGINT,
+    FileName VARCHAR(255),
+    CreateAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ContentId VARCHAR(255),
+    ChatId VARCHAR(255),
+    Size BIGINT,
+    ProcessingStatus VARCHAR(50),
+    Duration FLOAT,
+    HLSManifestBaseURL VARCHAR(255),
+    HLSManifest1080p VARCHAR(255),
+    HLSManifest720p VARCHAR(255),
+    HLSManifest480p VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS Session (
@@ -567,47 +574,113 @@ Es el núcleo del sistema de reputación, registrando los Puntos de Reputación 
 el feedback cualitativo.
 
 Campos Principales:
-- IdEvaluador: El ID del usuario (persona o empresa) que realiza la calificación.
-- IdEvaluado: El ID del usuario (persona o empresa) que recibe la calificación y los puntos.
-- PuntosRP: La cantidad de puntos crudos otorgados, usados para el cálculo del nivel logarítmico.
-- Calificacion: La puntuación visible (ej. 4.5 estrellas).
-- TipoInteraccion: El contexto que originó la reseña (ej. una entrevista).
+- ReviewerId: El ID del usuario que realiza la calificación.
+- RevieweeId: El ID del usuario que recibe la calificación.
+- CommunityEventId: El ID del evento/publicación que origina la reseña. Esto es clave
+  para permitir múltiples calificaciones entre los mismos usuarios pero en diferentes contextos.
+- PointsRP: La cantidad de puntos crudos otorgados.
+- Rating: La puntuación visible (ej. 4.5 estrellas).
+- InteractionType: El contexto que originó la reseña.
 
 Relaciones:
-- Se vincula dos veces con la tabla User a través de IdEvaluador y IdEvaluado.
+- Se vincula con la tabla User (dos veces) y con la tabla CommunityEvent.
 */
-
 CREATE TABLE IF NOT EXISTS ReputationReview (
     Id BIGINT AUTO_INCREMENT PRIMARY KEY,
 
     -- Clave foránea que referencia al usuario que EMITE la reseña.
-    -- Puede ser un estudiante, egresado o una empresa.
     ReviewerId BIGINT NOT NULL,
 
     -- Clave foránea que referencia al usuario que RECIBE la reseña y los puntos.
-    -- Puede ser un estudiante, egresado o una empresa.
     RevieweeId BIGINT NOT NULL,
 
-    -- El valor numérico de "Puntos de Reputación" (RP) otorgados en esta interacción.
-    -- Este es el valor que se suma para el sistema de niveles logarítmico.
+    -- --- CAMPO AÑADIDO ---
+    -- Vincula la reseña a una publicación específica (oferta, evento, desafío).
+    -- Es NOT NULL para asegurar que toda reseña tenga un contexto claro.
+    CommunityEventId BIGINT NOT NULL,
+
+    -- El valor numérico de "Puntos de Reputación" (RP).
     PointsRP INT NOT NULL,
 
-    -- La calificación visible por los usuarios (ej. una escala de 1 a 5).
+    -- La calificación visible (ej. en una escala de 1 a 5).
     Rating DECIMAL(2, 1),
 
     -- El comentario o feedback cualitativo.
     Comment TEXT,
 
-    -- Define el contexto de la reseña para dar más información.
-    InteractionType ENUM('ENTREVISTA', 'MENTORIA', 'PROYECTO_COLABORATIVO', 'EVENTO'),
+    -- Define el contexto de la reseña. Podría ser redundante con CommunityEvent.PostType
+    -- pero se mantiene para flexibilidad.
+    InteractionType ENUM('ENTREVISTA', 'MENTORIA', 'PROYECTO_COLABORATIVO', 'EVENTO', 'POSTULACION_EMPLEO', 'DESAFIO_COMPLETADO'),
 
     -- Timestamps
     CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- Definición de las llaves foráneas, vinculando esta tabla con la tabla User.
-    FOREIGN KEY (ReviewerId) REFERENCES User(Id),
-    FOREIGN KEY (RevieweeId) REFERENCES User(Id)
+    -- Definición de las llaves foráneas.
+    FOREIGN KEY (ReviewerId) REFERENCES User(Id) ON DELETE CASCADE,
+    FOREIGN KEY (RevieweeId) REFERENCES User(Id) ON DELETE CASCADE,
+    FOREIGN KEY (CommunityEventId) REFERENCES CommunityEvent(Id) ON DELETE CASCADE,
+
+    -- --- NUEVA RESTRICCIÓN ---
+    -- Asegura que solo pueda existir una única reseña por parte de un 'reviewer'
+    -- a un 'reviewee' para un evento comunitario específico.
+    UNIQUE KEY uq_unique_review_per_event (ReviewerId, RevieweeId, CommunityEventId)
 );
+
+-- =================================================================
+-- COMANDOS ALTER TABLE PARA ACTUALIZAR LA TABLA ReputationReview
+-- =================================================================
+/*
+-- ATENCIÓN: Sigue estos pasos en orden para migrar una base de datos con datos existentes
+-- sin causar errores de llave foránea.
+
+-- PASO 1: Revertir cambios anteriores (ignora los errores si las columnas/restricciones no existen)
+-- -----------------------------------------------------------------------------------------
+-- Descomenta y ejecuta estas líneas si los comandos anteriores fallaron y necesitas empezar de nuevo.
+
+ALTER TABLE ReputationReview DROP FOREIGN KEY fk_reputation_communityevent;
+ALTER TABLE ReputationReview DROP INDEX uq_unique_review_per_event;
+ALTER TABLE ReputationReview DROP COLUMN CommunityEventId;
+
+
+-- PASO 2: Añadir la nueva columna como NULLABLE
+-- ------------------------------------------------
+-- Esto permite que la columna se añada sin asignar valores por defecto que rompan la integridad.
+ALTER TABLE ReputationReview ADD COLUMN CommunityEventId BIGINT NULL AFTER RevieweeId;
+
+
+-- PASO 3: Poblar la columna para los datos existentes
+-- ---------------------------------------------------
+-- ¡ACCIÓN REQUERIDA! Debes asignar un ID de evento VÁLIDO a todas las reseñas existentes.
+-- Si no lo haces, el PASO 5 fallará. Si no tienes a qué evento asociarlas,
+-- puedes borrarlas o asociarlas a un evento genérico que crees para este propósito.
+--
+-- EJEMPLO (NO EJECUTAR DIRECTAMENTE, ADÁPTALO A TUS DATOS):
+-- UPDATE ReputationReview SET CommunityEventId = (SELECT Id FROM CommunityEvent LIMIT 1) WHERE CommunityEventId IS NULL;
+
+
+-- PASO 4: Modificar el ENUM y añadir las restricciones
+-- ----------------------------------------------------
+ALTER TABLE ReputationReview MODIFY COLUMN InteractionType ENUM('ENTREVISTA', 'MENTORIA', 'PROYECTO_COLABORATIVO', 'EVENTO', 'POSTULACION_EMPLEO', 'DESAFIO_COMPLETADO');
+
+-- Añadir la llave foránea. Esto funcionará porque los nuevos datos tendrán un ID válido
+-- y los viejos datos son NULL o ya fueron poblados en el PASO 3.
+ALTER TABLE ReputationReview ADD CONSTRAINT fk_reputation_communityevent
+FOREIGN KEY (CommunityEventId) REFERENCES CommunityEvent(Id) ON DELETE CASCADE;
+
+-- Añadir la restricción de unicidad.
+ALTER TABLE ReputationReview ADD CONSTRAINT uq_unique_review_per_event
+UNIQUE (ReviewerId, RevieweeId, CommunityEventId);
+
+
+-- PASO 5: Hacer la columna NOT NULL (Opcional pero recomendado)
+-- ---------------------------------------------------------------
+-- Una vez que TODAS las reseñas tienen un CommunityEventId válido, puedes forzar
+-- a que la columna no acepte nulos para futuras inserciones.
+-- Este comando fallará si alguna fila todavía tiene `CommunityEventId` como NULL.
+--
+ALTER TABLE ReputationReview MODIFY COLUMN CommunityEventId BIGINT NOT NULL;
+
+*/
 
 -- =================================================================
 -- MIGRACIÓN PARA BÚSQUEDA FONÉTICA (DOUBLE METAPHONE)

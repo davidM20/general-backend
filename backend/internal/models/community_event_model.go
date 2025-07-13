@@ -36,6 +36,9 @@ type CommunityEvent struct {
 	DmetaTitleSecondary    string          `json:"dmeta_title_secondary,omitempty"`
 	CreatedAt              time.Time       `json:"created_at"`
 	UpdatedAt              time.Time       `json:"updated_at"`
+	// --- CAMPO NUEVO ---
+	// Indica si el evento tiene al menos un postulante. Se calcula en la consulta.
+	HasApplicants bool `json:"hasApplicants"`
 }
 
 // CommunityEventCreateRequest representa los datos para crear una nueva publicación en el feed.
