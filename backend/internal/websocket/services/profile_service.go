@@ -32,6 +32,14 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 	g, _ := errgroup.WithContext(context.Background())
 	var profileData wsmodels.ProfileData
 
+	// Obtener el rol del usuario para determinar qué reseñas cargar.
+	// Se ejecuta de forma síncrona porque la lógica de las reseñas depende de él.
+	targetRoleID, err := queries.GetUserRoleByID(userID)
+	if err != nil {
+		logger.Errorf("SERVICE_PROFILE", "Error obteniendo el rol para UserID %d: %v", userID, err)
+		return nil, fmt.Errorf("no se pudo determinar el rol del usuario: %w", err)
+	}
+
 	// 1. Obtener datos base del perfil
 	g.Go(func() error {
 		userData, err := queries.GetUserFullProfileData(userID)
@@ -155,23 +163,43 @@ func GetUserProfileData(userID int64, currentUserID int64, manager *customws.Con
 
 	// 5. Obtener lista de reseñas
 	g.Go(func() error {
-		reviewsDB, err := queries.GetReputationReviewsByUserID(userID)
-		if err != nil {
-			logger.Warnf("SERVICE_PROFILE", "Error obteniendo reseñas para UserID %d: %v", userID, err)
-			return nil // No es un error fatal
-		}
+		// Lógica condicional basada en el rol del perfil solicitado
+		if targetRoleID == 3 { // Es una empresa, obtener reseñas de usuarios
+			reviewsDB, err := queries.GetReputationReviewsForCompanyByUserID(userID)
+			if err != nil {
+				logger.Warnf("SERVICE_PROFILE", "Error obteniendo reseñas para CompanyID %d: %v", userID, err)
+				return nil // No es un error fatal
+			}
+			reviewsWS := make([]wsmodels.ReputationReviewItem, 0, len(reviewsDB))
+			for _, r := range reviewsDB {
+				reviewsWS = append(reviewsWS, wsmodels.ReputationReviewItem{
+					Id:                  r.Id,
+					Rating:              safeNullFloat64(r.Rating),
+					Comment:             safeNullString(r.Comment),
+					ReviewerCompanyName: safeNullString(r.ReviewerFullName), // Usamos FullName en lugar de CompanyName
+					ReviewerPicture:     safeNullString(r.ReviewerPicture),
+				})
+			}
+			profileData.Reviews = reviewsWS
+		} else { // Es un estudiante/egresado, obtener reseñas de empresas
+			reviewsDB, err := queries.GetReputationReviewsByUserID(userID)
+			if err != nil {
+				logger.Warnf("SERVICE_PROFILE", "Error obteniendo reseñas para UserID %d: %v", userID, err)
+				return nil // No es un error fatal
+			}
 
-		reviewsWS := make([]wsmodels.ReputationReviewItem, 0, len(reviewsDB))
-		for _, r := range reviewsDB {
-			reviewsWS = append(reviewsWS, wsmodels.ReputationReviewItem{
-				Rating:              safeNullFloat64(r.Rating),
-				Comment:             safeNullString(r.Comment),
-				ReviewerCompanyName: safeNullString(r.ReviewerCompanyName),
-				ReviewerPicture:     safeNullString(r.ReviewerPicture),
-				Id:                  r.Id,
-			})
+			reviewsWS := make([]wsmodels.ReputationReviewItem, 0, len(reviewsDB))
+			for _, r := range reviewsDB {
+				reviewsWS = append(reviewsWS, wsmodels.ReputationReviewItem{
+					Rating:              safeNullFloat64(r.Rating),
+					Comment:             safeNullString(r.Comment),
+					ReviewerCompanyName: safeNullString(r.ReviewerCompanyName),
+					ReviewerPicture:     safeNullString(r.ReviewerPicture),
+					Id:                  r.Id,
+				})
+			}
+			profileData.Reviews = reviewsWS
 		}
-		profileData.Reviews = reviewsWS
 		return nil
 	})
 
@@ -249,10 +277,3 @@ func GetCompleteProfile(userID int64) (*wsmodels.ProfileData, error) {
 	// Reutilizamos GetUserProfileData que ya hace todo el trabajo de forma eficiente.
 	return GetUserProfileData(userID, userID, nil)
 }
-
-// TODO: Implementar funciones del servicio de perfil
-// - GetUserProfileData(userID int64, currentUserID int64, manager *customws.ConnectionManager[wsmodels.WsUserData]) (*wsmodels.ProfileData, error)
-// - UpdateUserProfile(userID int64, updates map[string]interface{}) error
-// - AddProfileSectionItem(userID int64, section string, itemData interface{}) error
-// - UpdateProfileSectionItem(userID int64, section string, itemID int64, itemData interface{}) error
-// - DeleteProfileSectionItem(userID int64, section string, itemID int64) error

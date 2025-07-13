@@ -50,12 +50,24 @@ func GetCompleteCompanyProfile(userID int64) (*models.CompleteCompanyProfile, er
 
 	// 4. Obtener la lista de reseñas
 	g.Go(func() error {
-		reviews, err := queries.GetReputationReviewsByUserID(userID)
+		reviewsDB, err := queries.GetReputationReviewsForCompanyByUserID(userID)
 		if err != nil {
 			logger.Warnf("COMPANY_SERVICE", "Error obteniendo reseñas para CompanyID %d: %v", userID, err)
 			return nil // No es un error fatal
 		}
-		completeProfile.Reviews = reviews
+
+		// Transformar del modelo de BD al modelo de respuesta
+		reviewsResponse := make([]models.CompanyReviewItem, 0, len(reviewsDB))
+		for _, r := range reviewsDB {
+			reviewsResponse = append(reviewsResponse, models.CompanyReviewItem{
+				Id:               r.Id,
+				Rating:           safeNullFloat64(r.Rating),
+				Comment:          safeNullString(r.Comment),
+				ReviewerFullName: safeNullString(r.ReviewerFullName),
+				ReviewerPicture:  safeNullString(r.ReviewerPicture),
+			})
+		}
+		completeProfile.Reviews = reviewsResponse
 		return nil
 	})
 
@@ -65,6 +77,14 @@ func GetCompleteCompanyProfile(userID int64) (*models.CompleteCompanyProfile, er
 
 	// 5. Calcular las estadísticas
 	calculateCompanyStats(&completeProfile)
+
+	// Asegurarse de que los slices no sean nulos para evitar `null` en JSON
+	if completeProfile.Events == nil {
+		completeProfile.Events = []models.CompanyEvent{}
+	}
+	if completeProfile.Reviews == nil {
+		completeProfile.Reviews = []models.CompanyReviewItem{}
+	}
 
 	return &completeProfile, nil
 }

@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // REGLAS A SEGUIR EN ESTE ARCHIVO
 // 1. Todas las estructuras deben ser específicas para la vista de perfil de empresa.
@@ -9,28 +12,27 @@ import "time"
 
 // CompanyProfile define la estructura de datos para el perfil de una empresa.
 type CompanyProfile struct {
-	Id                 int64            `json:"Id"`
-	CompanyName        string           `json:"CompanyName"`
-	Email              string           `json:"Email"`
-	ContactEmail       string           `json:"ContactEmail,omitempty"`
-	RIF                string           `json:"RIF"`
-	Sector             string           `json:"Sector"`
-	Location           string           `json:"Location"`
-	Address            string           `json:"Address,omitempty"`
-	FoundationYear     *int             `json:"FoundationYear,omitempty"`
-	EmployeeCount      *int             `json:"EmployeeCount,omitempty"`
-	Summary            string           `json:"Summary,omitempty"`
-	Phone              string           `json:"Phone,omitempty"`
-	Github             string           `json:"Github,omitempty"`
-	Linkedin           string           `json:"Linkedin,omitempty"`
-	Twitter            string           `json:"Twitter,omitempty"`
-	Facebook           string           `json:"Facebook,omitempty"`
-	Picture            string           `json:"Picture,omitempty"`
-	RoleId             int              `json:"RoleId"`
-	StatusAuthorizedId int              `json:"StatusAuthorizedId,omitempty"`
-	CreatedAt          time.Time        `json:"CreatedAt"`
-	UpdatedAt          time.Time        `json:"UpdatedAt"`
-	Reputation         *ReputationStats `json:"reputation,omitempty"`
+	Id                 int64     `json:"Id"`
+	CompanyName        string    `json:"CompanyName"`
+	Email              string    `json:"Email"`
+	ContactEmail       string    `json:"ContactEmail,omitempty"`
+	RIF                string    `json:"RIF"`
+	Sector             string    `json:"Sector"`
+	Location           string    `json:"Location"`
+	Address            string    `json:"Address,omitempty"`
+	FoundationYear     *int      `json:"FoundationYear,omitempty"`
+	EmployeeCount      *int      `json:"EmployeeCount,omitempty"`
+	Summary            string    `json:"Summary,omitempty"`
+	Phone              string    `json:"Phone,omitempty"`
+	Github             string    `json:"Github,omitempty"`
+	Linkedin           string    `json:"Linkedin,omitempty"`
+	Twitter            string    `json:"Twitter,omitempty"`
+	Facebook           string    `json:"Facebook,omitempty"`
+	Picture            string    `json:"Picture,omitempty"`
+	RoleId             int       `json:"RoleId"`
+	StatusAuthorizedId int       `json:"StatusAuthorizedId,omitempty"`
+	CreatedAt          time.Time `json:"CreatedAt"`
+	UpdatedAt          time.Time `json:"UpdatedAt"`
 }
 
 // CompanyEvent representa un evento creado por una empresa.
@@ -53,13 +55,31 @@ type CompanyStats struct {
 	EmployeeCount     int `json:"employeeCount"`
 }
 
+// CompanyReputationReviewInfo es el modelo para los datos brutos de una reseña de empresa desde la base de datos.
+type CompanyReputationReviewInfo struct {
+	Id               int64           `json:"id"`
+	Rating           sql.NullFloat64 `json:"rating"`
+	Comment          sql.NullString  `json:"comment"`
+	ReviewerFullName sql.NullString  `json:"reviewerFullName"`
+	ReviewerPicture  sql.NullString  `json:"reviewerPicture"`
+}
+
+// CompanyReviewItem es la estructura de una reseña de empresa para el frontend.
+type CompanyReviewItem struct {
+	Id               int64   `json:"id"`
+	Rating           float64 `json:"rating"`
+	Comment          string  `json:"comment"`
+	ReviewerFullName string  `json:"reviewerFullName"`
+	ReviewerPicture  string  `json:"reviewerPicture"`
+}
+
 // CompleteCompanyProfile es la estructura completa que se envía al frontend.
 type CompleteCompanyProfile struct {
-	Company    CompanyProfile         `json:"company"`
-	Events     []CompanyEvent         `json:"events"`
-	Stats      CompanyStats           `json:"stats"`
-	Reputation *ReputationStats       `json:"reputation,omitempty"`
-	Reviews    []ReputationReviewInfo `json:"reviews,omitempty"`
+	Company    CompanyProfile      `json:"company"`
+	Events     []CompanyEvent      `json:"events"`
+	Stats      CompanyStats        `json:"stats"`
+	Reputation *ReputationStats    `json:"reputation,omitempty"`
+	Reviews    []CompanyReviewItem `json:"reviews"`
 }
 
 // EnterpriseProfileUpdate define los campos que una empresa puede actualizar.
