@@ -320,11 +320,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user.StatusAuthorizedId != 1 { // Asumiendo 1 = Active
-		logger.Warnf("LOGIN", "Login attempt for inactive account: UserID %d, StatusID %d", user.Id, user.StatusAuthorizedId)
-		http.Error(w, "Account is not active", http.StatusForbidden)
-		return
-	}
+	// if user.StatusAuthorizedId != 1 { // Asumiendo 1 = Active
+	// 	logger.Warnf("LOGIN", "Login attempt for inactive account: UserID %d, StatusID %d", user.Id, user.StatusAuthorizedId)
+	// 	http.Error(w, "Account is not active", http.StatusForbidden)
+	// 	return
+	// }
 
 	// Compara la contraseña ingresada con la contraseña hasheada almacenada
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password)); err != nil {
@@ -334,7 +334,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Generar el token JWT
 	expirationTime := time.Hour * 24 * 360 // Token válido por 24 horas
-	tokenString, err := auth.GenerateJWT(user.Id, int64(user.RoleId), []byte(h.Cfg.JwtSecret), expirationTime)
+	tokenString, tokenID, err := auth.GenerateJWT(user.Id, int64(user.RoleId), []byte(h.Cfg.JwtSecret), expirationTime)
 	if err != nil {
 		logger.Errorf("LOGIN", "Error generating JWT for user %s: %v", req.Email, err)
 		http.Error(w, "Error generating session token", http.StatusInternalServerError)
@@ -342,8 +342,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Insertar el token en la tabla Session usando la consulta centralizada
-	clientIP := getClientIP(r)
-	err = queries.RegisterUserSession(h.DB, user.Id, tokenString, clientIP, user.RoleId)
+	// clientIP := getClientIP(r)
+
+	clientIP := "127.0.0.1"
+	err = queries.RegisterUserSession(h.DB, user.Id, tokenString, clientIP, user.RoleId, tokenID)
 	if err != nil {
 		logger.Errorf("LOGIN", "Error creating session for user %s: %v", req.Email, err)
 		http.Error(w, "Error creating session", http.StatusInternalServerError)

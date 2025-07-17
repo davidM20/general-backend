@@ -51,8 +51,12 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 			eventArgs = append(eventArgs, primaryKey+"%", secondaryKey+"%")
 		}
 		// Búsqueda LIKE tradicional
-		userTextSearchConditions = append(userTextSearchConditions, "u.FirstName LIKE ? OR u.LastName LIKE ? OR u.UserName LIKE ? OR u.RIF LIKE ? OR EXISTS (SELECT 1 FROM Education e WHERE e.PersonId = u.Id AND e.Degree LIKE ?)")
+		userTextSearchConditions = append(userTextSearchConditions, "(u.FirstName LIKE ? OR u.LastName LIKE ? OR u.UserName LIKE ? OR u.RIF LIKE ? OR u.CompanyName LIKE ?)")
 		userArgs = append(userArgs, likeQuery, likeQuery, likeQuery, likeQuery, likeQuery)
+
+		// Búsqueda en educación (solo para talentos)
+		userTextSearchConditions = append(userTextSearchConditions, "EXISTS (SELECT 1 FROM Education e WHERE e.PersonId = u.Id AND e.Degree LIKE ?)")
+		userArgs = append(userArgs, likeQuery)
 
 		userConditions = append(userConditions, "("+strings.Join(userTextSearchConditions, " OR ")+")")
 	}
@@ -111,14 +115,14 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 	}
 
 	// === CONSTRUIR CONSULTAS FINALES ===
-	userQuery := "SELECT 'user' as type, u.Id, u.CreatedAt FROM User u"
+	userQuery := "SELECT 'user' as type, u.Id, u.CreatedAt, u.RoleId FROM User u"
 	if len(userConditions) > 0 {
 		userQuery += " WHERE " + strings.Join(userConditions, " AND ")
 	}
 
 	var eventQuery string
 	if !isTalentOnlySearch {
-		eventQuery = "SELECT 'event' as type, ce.Id, ce.CreatedAt FROM CommunityEvent ce"
+		eventQuery = "SELECT 'event' as type, ce.Id, ce.CreatedAt, NULL as RoleId FROM CommunityEvent ce"
 		if len(eventConditions) > 0 {
 			eventQuery += " WHERE " + strings.Join(eventConditions, " AND ")
 		}
@@ -141,12 +145,13 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		paginatedUsers, paginatedEvents, pagination, err := s.fetchPaginatedResults(ctx, userQuery, eventQuery, userArgs, eventArgs, params)
+		paginatedUsers, paginatedCompanies, paginatedEvents, pagination, err := s.fetchPaginatedResults(ctx, userQuery, eventQuery, userArgs, eventArgs, params)
 		if err != nil {
 			errChan <- fmt.Errorf("error fetching paginated results: %w", err)
 			return
 		}
 		response.Users = paginatedUsers
+		response.Companies = paginatedCompanies
 		response.Events = paginatedEvents
 		response.Pagination = pagination
 	}()
@@ -188,7 +193,7 @@ func (s *SearchService) UniversalSearch(ctx context.Context, params models.Unive
 	return &response, nil
 }
 
-func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, eventQuery string, userArgs, eventArgs []interface{}, params models.UniversalSearchParams) ([]models.SearchResultProfile, []models.CommunityEvent, models.PaginationDetails, error) {
+func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, eventQuery string, userArgs, eventArgs []interface{}, params models.UniversalSearchParams) ([]models.SearchResultProfile, []models.SearchResultProfile, []models.CommunityEvent, models.PaginationDetails, error) {
 	// Implementación de conteo y obtención de resultados paginados (lógica que ya teníamos)
 	var countQuery, fullQuery string
 	var countArgs, queryArgs []interface{}
@@ -206,7 +211,7 @@ func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, ev
 	var totalItems int
 	if err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&totalItems); err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error counting combined results: %v", err)
-		return nil, nil, models.PaginationDetails{}, fmt.Errorf("error counting results: %w", err)
+		return nil, nil, nil, models.PaginationDetails{}, fmt.Errorf("error counting results: %w", err)
 	}
 
 	pagination := models.PaginationDetails{
@@ -217,7 +222,7 @@ func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, ev
 	}
 
 	if totalItems == 0 {
-		return []models.SearchResultProfile{}, []models.CommunityEvent{}, pagination, nil
+		return []models.SearchResultProfile{}, []models.SearchResultProfile{}, []models.CommunityEvent{}, pagination, nil
 	}
 
 	offset := (params.Page - 1) * params.Limit
@@ -230,17 +235,19 @@ func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, ev
 	rows, err := s.db.QueryContext(ctx, fullQuery, queryArgs...)
 	if err != nil {
 		logger.Errorf("SEARCH_SERVICE", "Error executing combined search: %v", err)
-		return nil, nil, pagination, fmt.Errorf("error executing search: %w", err)
+		return nil, nil, nil, pagination, fmt.Errorf("error executing search: %w", err)
 	}
 	defer rows.Close()
 
 	var users []models.SearchResultProfile
+	var companies []models.SearchResultProfile
 	var events []models.CommunityEvent
 	for rows.Next() {
 		var resultType string
 		var id int64
 		var createdAt sql.NullTime
-		if err := rows.Scan(&resultType, &id, &createdAt); err != nil {
+		var roleId sql.NullInt64
+		if err := rows.Scan(&resultType, &id, &createdAt, &roleId); err != nil {
 			logger.Errorf("SEARCH_SERVICE", "Error scanning combined result row: %v", err)
 			continue
 		}
@@ -251,7 +258,11 @@ func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, ev
 				logger.Warnf("SEARCH_SERVICE", "Could not fetch full profile for user ID %d: %v", id, err)
 				continue
 			}
-			users = append(users, *profile)
+			if roleId.Valid && roleId.Int64 == 3 {
+				companies = append(companies, *profile)
+			} else {
+				users = append(users, *profile)
+			}
 		} else if resultType == "event" {
 			event, err := queries.GetCommunityEventByID(s.db, id)
 			if err != nil {
@@ -261,7 +272,7 @@ func (s *SearchService) fetchPaginatedResults(ctx context.Context, userQuery, ev
 			events = append(events, *event)
 		}
 	}
-	return users, events, pagination, nil
+	return users, companies, events, pagination, nil
 }
 
 func (s *SearchService) fetchCareerDistribution(ctx context.Context, userConditions []string, userArgs []interface{}) ([]models.CareerDistribution, error) {

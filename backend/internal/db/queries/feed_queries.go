@@ -118,6 +118,7 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
             -- Columnas para hacer match con la query de usuarios
             NULL as user_sector,
             NULL as user_username,
+			NULL as has_contact,
             -- Scoring: Prioritize newer content. Penalize heavily if already viewed.
             (DATEDIFF(NOW(), ce.CreatedAt) * -0.6) + (IF(vi.UserId IS NULL, 0, -100)) AS relevance_score
         FROM
@@ -149,6 +150,11 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
             u.Picture as user_avatar,
             u.Sector as user_sector,
             u.UserName as user_username,
+            EXISTS (
+                SELECT 1 FROM Contact c
+                WHERE ((c.User1Id = ? AND c.User2Id = u.Id) OR (c.User1Id = u.Id AND c.User2Id = ?))
+                AND c.Status = 'accepted'
+            ) as has_contact,
             -- Scoring: Similar to events, but with slightly less weight on recency.
             (DATEDIFF(NOW(), u.CreatedAt) * -0.5) + (IF(vi.UserId IS NULL, 0, -100)) AS relevance_score
         FROM
@@ -164,7 +170,7 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
 	logger.Debugf("GetUnifiedFeed", "Ejecutando consulta unificada de feed para UserID %d con Limit: %d, Offset: %d", userID, limit, offset)
 
 	// Ejecuta la consulta.
-	rows, err := db.Query(query, userID, userID, 1, 2, 3, limit, offset)
+	rows, err := db.Query(query, userID, userID, userID, userID, 1, 2, 3, limit, offset)
 	if err != nil {
 		logger.Errorf("GetUnifiedFeed", "Error al ejecutar la consulta de feed unificado para UserID %d: %v", userID, err)
 		return nil, 0, err
@@ -177,11 +183,12 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
 		var itemID, userID sql.NullInt64
 		var createdAt sql.NullTime
 		var relevanceScore sql.NullFloat64
+		var hasContact sql.NullBool
 
 		if err := rows.Scan(
 			&itemType, &itemID, &title, &description, &imageUrl, &createdAt, &subType,
 			&userID, &userFirstName, &userLastName, &companyName, &userAvatar, &userSector, &userUsername,
-			&relevanceScore,
+			&hasContact, &relevanceScore,
 		); err != nil {
 			logger.Errorf("GetUnifiedFeed", "Error al escanear fila de feed unificado: %v", err)
 			continue
@@ -220,6 +227,7 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
 				Description: description.String,
 				UserID:      itemID.Int64,
 				UserName:    userUsername.String,
+				HasContact:  hasContact.Bool,
 			}
 		case "company":
 			idStr = "user-" + strconv.FormatInt(itemID.Int64, 10)
@@ -231,6 +239,7 @@ func GetUnifiedFeed(db *sql.DB, userID int64, limit int, offset int) ([]wsmodels
 				Description: description.String,
 				UserID:      itemID.Int64,
 				UserName:    userUsername.String,
+				HasContact:  hasContact.Bool,
 			}
 		default:
 			logger.Warnf("GetUnifiedFeed", "Tipo de item desconocido encontrado: %s", itemType.String)

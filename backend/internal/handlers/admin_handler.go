@@ -11,6 +11,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/models"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
+	"github.com/gorilla/mux"
 )
 
 // AdminHandler maneja las peticiones para las rutas de administrador.
@@ -148,4 +149,40 @@ func (h *AdminHandler) ListUnapprovedCompanies(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+// ApproveCompany aprueba una empresa pendiente cambiando su estado.
+func (h *AdminHandler) ApproveCompany(w http.ResponseWriter, r *http.Request) {
+	// 1. Extraer el ID de la empresa de los parámetros de la URL.
+	vars := mux.Vars(r)
+	idStr, ok := vars["id"]
+	if !ok {
+		http.Error(w, "ID de la empresa no proporcionado", http.StatusBadRequest)
+		return
+	}
+
+	companyID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "ID de la empresa inválido", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Llamar a la lógica de la base de datos para aprobar la empresa.
+	err = queries.ApproveCompanyStatus(companyID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Si no se afectaron filas, significa que no se encontró la empresa.
+			http.Error(w, "Empresa no encontrada o no es una cuenta de empresa pendiente", http.StatusNotFound)
+		} else {
+			// Otros errores de la base de datos.
+			logger.Errorf("ADMIN_HANDLER", "Failed to approve company with ID %d: %v", companyID, err)
+			http.Error(w, "Error al aprobar la empresa", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// 3. Responder con éxito.
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Empresa aprobada exitosamente"})
 }

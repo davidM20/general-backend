@@ -373,9 +373,9 @@ func HandleSetEducation(conn *customws.Connection[wsmodels.WsUserData], msg type
 	}
 	educationPayload := requestData.Data
 
-	if educationPayload.Institution == "" || educationPayload.Degree == "" {
-		logger.Warnf("CV_HANDLER", "Validación fallida para set_education: campos vacíos. UserID: %d", conn.ID)
-		conn.SendErrorNotification(msg.PID, 400, "Los campos 'Institution' y 'Degree' no pueden estar vacíos.")
+	if educationPayload.Institution == "" {
+		logger.Warnf("CV_HANDLER", "Validación fallida para set_education: institución vacía. UserID: %d", conn.ID)
+		conn.SendErrorNotification(msg.PID, 400, "El campo 'Institution' no puede estar vacío.")
 		return nil
 	}
 

@@ -63,19 +63,39 @@ func (s *JobApplicationService) ListApplicants(eventID int64) ([]models.Applican
 
 	var applicants []models.ApplicantInfo
 	for rows.Next() {
-		var app models.ApplicantInfo
+		var nullableApp struct {
+			ApplicantID       int64
+			FirstName         sql.NullString
+			LastName          sql.NullString
+			Email             sql.NullString
+			AverageRating     sql.NullFloat64
+			ReputationScore   sql.NullInt64
+			ApplicationStatus sql.NullString
+			AppliedAt         sql.NullTime
+		}
 		if err := rows.Scan(
-			&app.ApplicantID,
-			&app.FirstName,
-			&app.LastName,
-			&app.Email,
-			&app.AverageRating,
-			&app.ReputationScore,
-			&app.ApplicationStatus,
-			&app.AppliedAt,
+			&nullableApp.ApplicantID,
+			&nullableApp.FirstName,
+			&nullableApp.LastName,
+			&nullableApp.Email,
+			&nullableApp.AverageRating,
+			&nullableApp.ReputationScore,
+			&nullableApp.ApplicationStatus,
+			&nullableApp.AppliedAt,
 		); err != nil {
 			logger.Errorf(jobApplicationServiceComponent, "Error al escanear el perfil del postulante: %v", err)
 			return nil, fmt.Errorf("error al procesar los resultados: %w", err)
+		}
+
+		app := models.ApplicantInfo{
+			ApplicantID:       nullableApp.ApplicantID,
+			FirstName:         nullableApp.FirstName.String,
+			LastName:          nullableApp.LastName.String,
+			Email:             nullableApp.Email.String,
+			AverageRating:     nullableApp.AverageRating.Float64,
+			ReputationScore:   int(nullableApp.ReputationScore.Int64),
+			ApplicationStatus: nullableApp.ApplicationStatus.String,
+			AppliedAt:         nullableApp.AppliedAt.Time,
 		}
 		applicants = append(applicants, app)
 	}

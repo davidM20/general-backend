@@ -15,7 +15,7 @@ import (
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	internalWs "github.com/davidM20/micro-service-backend-go.git/internal/websocket"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/admin"
-	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/auth"
+	wsauth "github.com/davidM20/micro-service-backend-go.git/internal/websocket/auth"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/handlers"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/services"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
@@ -41,14 +41,10 @@ func main() {
 	// Conectar a la base de datos
 	dbConn, err := db.Connect(cfg.DatabaseDSN)
 	if err != nil {
+		logger.Errorf("MAIN", "Failed to connect to database: %v", err)
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer func() {
-		if dbConn != nil {
-			dbConn.Close()
-			log.Println("Database connection closed.")
-		}
-	}()
+	defer dbConn.Close()
 
 	if err := db.InitializeDatabase(dbConn); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -77,8 +73,8 @@ func main() {
 	wsConfig.AckTimeout = 10 * time.Second
 	wsConfig.RequestTimeout = 20 * time.Second
 
-	// Instanciar el authenticator
-	wsAuthenticator := auth.NewAuthenticator(dbConn)
+	// Inicializar el autenticador para WebSocket
+	wsAuthenticator := wsauth.NewAuthenticator(dbConn, cfg)
 
 	// Configurar callbacks
 	callbacks := customws.Callbacks[wsmodels.WsUserData]{

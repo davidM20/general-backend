@@ -9,7 +9,7 @@ import (
 
 	"github.com/davidM20/micro-service-backend-go.git/internal/models" // Ajusta la ruta si es necesario
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 var (
@@ -21,6 +21,32 @@ var (
 // It expects the DSN (Data Source Name) for the MySQL database.
 func Connect(dsn string) (*sql.DB, error) {
 	var err error
+
+	// Parse the DSN using the MySQL driver's parser
+	cfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse DSN: %w", err)
+	}
+
+	dbName := cfg.DBName
+	// Temporarily remove the database name to connect to the server
+	cfg.DBName = ""
+	serverDSN := cfg.FormatDSN()
+
+	// Open connection to the database server
+	serverDB, err := sql.Open("mysql", serverDSN)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database server: %w", err)
+	}
+	defer serverDB.Close()
+
+	// Create the database if it doesn't exist
+	_, err = serverDB.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database '%s': %w", dbName, err)
+	}
+
+	// Now, connect to the specific database
 	once.Do(func() {
 		db, err = sql.Open("mysql", dsn)
 		if err != nil {
@@ -148,6 +174,28 @@ func createTables(tx *sql.Tx) error {
         Name VARCHAR(255) UNIQUE
     );
 
+
+/*
+Tabla User
+Descripción: Esta tabla almacena la información tanto de usuarios individuales como de empresas.
+La distinción entre tipo de usuario se maneja a través del campo RoleId.
+Para usuarios individuales: Se utilizan los campos personales (FirstName, LastName, etc.)
+Para empresas: Se utilizan los campos empresariales (RIF, CompanyName, Sector, etc.)
+
+Campos principales:
+- Información personal: FirstName, LastName, Email, Phone, etc.
+- Información empresarial: RIF, CompanyName, Sector, Location, etc.
+- Información de contacto: Email, ContactEmail, Phone, Address
+- Redes sociales: Github, Linkedin, Twitter, Facebook
+- Información académica: DegreeId, UniversityId
+- Información de estado: RoleId, StatusAuthorizedId
+
+Notas:
+- El campo Email es único y obligatorio para todos los usuarios
+- El campo RIF es único y obligatorio solo para empresas
+- Los timestamps (CreatedAt, UpdatedAt) se actualizan automáticamente
+*/
+
     CREATE TABLE IF NOT EXISTS User (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
         FirstName VARCHAR(255),
@@ -155,22 +203,35 @@ func createTables(tx *sql.Tx) error {
         UserName VARCHAR(255) UNIQUE,
         Password VARCHAR(255),
         Email VARCHAR(255) UNIQUE NOT NULL,
+ContactEmail VARCHAR(255),
+Twitter VARCHAR(255),
+Facebook VARCHAR(255),
         Phone VARCHAR(255),
         Sex VARCHAR(255),
         DocId VARCHAR(255) UNIQUE,
         NationalityId INT,
         Birthdate DATE,
         Picture VARCHAR(255),
-        DegreeId BIGINT,
-        UniversityId BIGINT,
-        RoleId INT,
+DegreeId BIGINT, -- desusado
+UniversityId BIGINT, -- desusado
+RoleId INT,  -- el rol determina si es un estudiante o una empresa (1: estudiante, 2: egresado 3: empresa)
         StatusAuthorizedId INT,
-        Summary VARCHAR(255),
+Summary TEXT,
         Address VARCHAR(255),
         Github VARCHAR(255),
         Linkedin VARCHAR(255),
-        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UpdateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+RIF VARCHAR(20) UNIQUE,
+Sector VARCHAR(100),
+CompanyName VARCHAR(255),
+Location VARCHAR(255),
+FoundationYear INT,
+EmployeeCount INT,
+dmeta_person_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_person_secondary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_company_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_company_secondary VARCHAR(24) NOT NULL DEFAULT '',
+CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (NationalityId) REFERENCES Nationality(Id),
         FOREIGN KEY (DegreeId) REFERENCES Degree(Id),
         FOREIGN KEY (UniversityId) REFERENCES University(Id),
@@ -180,73 +241,118 @@ func createTables(tx *sql.Tx) error {
 
     CREATE TABLE IF NOT EXISTS Online (
         UserOnlineId BIGINT PRIMARY KEY,
-        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Changed DATE to TIMESTAMP for more precision
+CreateAt DATE,
         Status TINYINT(1),
-        FOREIGN KEY (UserOnlineId) REFERENCES User(Id) ON DELETE CASCADE -- Added ON DELETE CASCADE
-    );
+FOREIGN KEY (UserOnlineId) REFERENCES User(Id)
+);
 
-    CREATE TABLE IF NOT EXISTS Event (
+CREATE TABLE IF NOT EXISTS Contact (
+ContactId BIGINT AUTO_INCREMENT PRIMARY KEY,
+User1Id BIGINT,
+User2Id BIGINT,
+Status VARCHAR(255), --  'pending', 'accepted', 'rejected'
+ChatId VARCHAR(255) UNIQUE,
+FOREIGN KEY (User1Id) REFERENCES User(Id),
+FOREIGN KEY (User2Id) REFERENCES User(Id)
+);
+
+CREATE TABLE IF NOT EXISTS GroupsUsers (
 		Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-		EventType VARCHAR(50) NOT NULL,
-		EventTitle VARCHAR(255) NOT NULL,
-		Description TEXT,
-		UserId BIGINT NOT NULL,
-		OtherUserId BIGINT,
-		ProyectId BIGINT,
-		CreateAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		IsRead BOOLEAN DEFAULT FALSE,
-		GroupId BIGINT,
-		Status VARCHAR(50) DEFAULT 'PENDING',
-		ActionRequired BOOLEAN DEFAULT FALSE,
-		ActionTakenAt DATETIME,
-		Metadata JSON,
-		FOREIGN KEY (UserId) REFERENCES User(Id),
-		FOREIGN KEY (OtherUserId) REFERENCES User(Id),
-		FOREIGN KEY (ProyectId) REFERENCES Project(Id),
-		FOREIGN KEY (GroupId) REFERENCES GroupsUsers(Id)
+Name VARCHAR(255),
+Description VARCHAR(255),
+Picture VARCHAR(255),
+AdminOfGroup BIGINT,
+ChatId VARCHAR(255) UNIQUE,
+FOREIGN KEY (AdminOfGroup) REFERENCES User(Id)
 	);
 
     CREATE TABLE IF NOT EXISTS Multimedia (
-        Id VARCHAR(255) PRIMARY KEY, -- Use UUID generated by application
+    Id VARCHAR(255) PRIMARY KEY,
         Type VARCHAR(255),
         Ratio FLOAT,
         UserId BIGINT,
         FileName VARCHAR(255),
-        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Changed DATE to TIMESTAMP
-        ContentId VARCHAR(255), -- ID in cloud storage
-        ChatId VARCHAR(255), -- Can be null if not associated with a chat
-        FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE SET NULL -- Or CASCADE?
+    CreateAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ContentId VARCHAR(255),
+    ChatId VARCHAR(255),
+    Size BIGINT,
+    ProcessingStatus VARCHAR(50),
+    Duration FLOAT,
+    HLSManifestBaseURL VARCHAR(255),
+    HLSManifest1080p VARCHAR(255),
+    HLSManifest720p VARCHAR(255),
+    HLSManifest480p VARCHAR(255)
     );
 
     CREATE TABLE IF NOT EXISTS Session (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
         UserId BIGINT,
-        Tk TEXT, -- Changed VARCHAR(255) to TEXT for potentially longer JWTs
+Tk VARCHAR(255),
         Ip VARCHAR(255),
         RoleId INT,
         TokenId INT,
-        CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        ExpiresAt TIMESTAMP, -- Added ExpiresAt for session management
-        FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE, -- Added ON DELETE CASCADE
-        FOREIGN KEY (RoleId) REFERENCES Role(Id),
-        FOREIGN KEY (TokenId) REFERENCES Token(Id)
-    );
+FOREIGN KEY (UserId) REFERENCES User(Id),
+FOREIGN KEY (RoleId) REFERENCES Role(Id)
+);
 
+/*
+Tabla Message (versión robusta)
+Descripción: Almacena todos los mensajes, tanto en chats privados como en grupos.
+
+Mejoras sobre la versión original:
+- Id: Se mantiene como VARCHAR(255) para soportar UUIDs generados por el cliente. Se recomienda usar CHAR(36) si son UUIDs estándar para ahorrar espacio y mejorar rendimiento.
+- Semántica de nombres: Se han renombrado campos como UserId a SenderId y ResponseTo a ReplyToMessageId para mayor claridad.
+- Contenido del mensaje: Text se cambia a Content y su tipo a TEXT para permitir mensajes más largos.
+- Timestamps precisos: Date (que solo guardaba la fecha) se reemplaza por SentAt (DATETIME) para incluir la hora y se añade EditedAt para registrar ediciones.
+- Estado del mensaje: StatusMessage (INT) se convierte en un ENUM para que los valores sean auto-descriptivos ('sending', 'sent', 'delivered', 'read', 'failed').
+- Integridad de datos: Se añaden restricciones (CHECK constraints) para:
+    1. Asegurar que un mensaje pertenezca a un chat (ChatId) O a un grupo (ChatIdGroup), pero no a ambos.
+    2. Evitar mensajes vacíos (debe tener Content o MediaId).
+- Índices optimizados: Se mueven los índices aquí y se ajustan para consultas comunes.
+*/
     CREATE TABLE IF NOT EXISTS Message (
-        Id VARCHAR(255) PRIMARY KEY, -- Use UUID generated by application
-        TypeMessageId BIGINT,
-        Text TEXT, -- Changed VARCHAR(255) to TEXT for longer messages
+    Id VARCHAR(255) PRIMARY KEY,
+    -- El ChatId o ChatIdGroup no puede ser nulo, pero solo uno de ellos debe tener valor.
+    ChatId VARCHAR(255),
+    ChatIdGroup VARCHAR(255),
+
+    SenderId BIGINT NOT NULL,
+    TypeMessageId BIGINT NOT NULL,
+    
+    Content TEXT,
         MediaId VARCHAR(255),
-        Date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Changed DATE to TIMESTAMP
-        StatusMessage INT, -- 1: sent, 2: delivered, 3: read
+    
+    -- Para mensajes que son una respuesta a otro.
+    ReplyToMessageId VARCHAR(255),
+
+    SentAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    EditedAt DATETIME, -- Se actualiza si el mensaje es editado.
+
+    Status ENUM('sending', 'sent', 'delivered', 'read', 'failed') NOT NULL DEFAULT 'sending',
+
+    FOREIGN KEY (SenderId) REFERENCES User(Id),
+    FOREIGN KEY (TypeMessageId) REFERENCES TypeMessage(Id),
+    FOREIGN KEY (MediaId) REFERENCES Multimedia(Id),
+    FOREIGN KEY (ChatId) REFERENCES Contact(ChatId),
+    FOREIGN KEY (ChatIdGroup) REFERENCES GroupsUsers(ChatId),
+    FOREIGN KEY (ReplyToMessageId) REFERENCES Message(Id),
+    
+    -- Un mensaje debe tener contenido de texto o un adjunto.
+    CONSTRAINT chk_message_content CHECK (Content IS NOT NULL OR MediaId IS NOT NULL),
+    
+    -- Un mensaje pertenece a un chat privado o a un grupo, no a ambos ni a ninguno.
+    CONSTRAINT chk_message_chat_or_group CHECK (
+        (ChatId IS NOT NULL AND ChatIdGroup IS NULL) OR 
+        (ChatId IS NULL AND ChatIdGroup IS NOT NULL)
+    )
+);
+
+
+CREATE TABLE IF NOT EXISTS GroupMembers (
         UserId BIGINT,
-        ChatId VARCHAR(255),
-        ResponseTo VARCHAR(255), -- Message ID it's replying to
-        FOREIGN KEY (TypeMessageId) REFERENCES TypeMessage(Id),
-        FOREIGN KEY (MediaId) REFERENCES Multimedia(Id) ON DELETE SET NULL, -- Keep message if media deleted?
-        FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE SET NULL, -- Keep message if user deleted?
-        FOREIGN KEY (ChatId) REFERENCES Contact(ChatId) ON DELETE CASCADE, -- Delete messages if chat deleted
-        FOREIGN KEY (ResponseTo) REFERENCES Message(Id) ON DELETE SET NULL -- Keep message if replied-to deleted?
+GroupId BIGINT,
+FOREIGN KEY (UserId) REFERENCES User(Id),
+FOREIGN KEY (GroupId) REFERENCES GroupsUsers(Id)
     );
 
     CREATE TABLE IF NOT EXISTS Education (
@@ -256,9 +362,15 @@ func createTables(tx *sql.Tx) error {
         Degree VARCHAR(255),
         Campus VARCHAR(255),
         GraduationDate DATE,
-        CountryId BIGINT, -- Consider FOREIGN KEY to Nationality(Id)?
-        FOREIGN KEY (PersonId) REFERENCES User(Id) ON DELETE CASCADE
-    );
+CountryId BIGINT,
+IsCurrentlyStudying BOOLEAN DEFAULT FALSE,
+dmeta_institution_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_institution_secondary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_degree_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_degree_secondary VARCHAR(24) NOT NULL DEFAULT '',
+FOREIGN KEY (PersonId) REFERENCES User(Id)
+);
+
 
     CREATE TABLE IF NOT EXISTS WorkExperience (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -267,10 +379,16 @@ func createTables(tx *sql.Tx) error {
         Position VARCHAR(255),
         StartDate DATE,
         EndDate DATE,
-        Description TEXT, -- Changed VARCHAR(255) to TEXT
-        CountryId BIGINT, -- Consider FOREIGN KEY to Nationality(Id)?
-        FOREIGN KEY (PersonId) REFERENCES User(Id) ON DELETE CASCADE
-    );
+Description TEXT,
+CountryId BIGINT,
+IsCurrentJob BOOLEAN DEFAULT FALSE,
+dmeta_company_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_company_secondary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_position_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_position_secondary VARCHAR(24) NOT NULL DEFAULT '',
+FOREIGN KEY (PersonId) REFERENCES User(Id)
+);
+
 
     CREATE TABLE IF NOT EXISTS Certifications (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -278,7 +396,7 @@ func createTables(tx *sql.Tx) error {
         Certification VARCHAR(255),
         Institution VARCHAR(255),
         DateObtained DATE,
-        FOREIGN KEY (PersonId) REFERENCES User(Id) ON DELETE CASCADE
+FOREIGN KEY (PersonId) REFERENCES User(Id)
     );
 
     CREATE TABLE IF NOT EXISTS Skills (
@@ -286,15 +404,18 @@ func createTables(tx *sql.Tx) error {
         PersonId BIGINT,
         Skill VARCHAR(255),
         Level VARCHAR(255),
-        FOREIGN KEY (PersonId) REFERENCES User(Id) ON DELETE CASCADE
+dmeta_primary VARCHAR(12) NOT NULL DEFAULT '',
+dmeta_secondary VARCHAR(12) NOT NULL DEFAULT '',
+FOREIGN KEY (PersonId) REFERENCES User(Id)
     );
+
 
     CREATE TABLE IF NOT EXISTS Languages (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
         PersonId BIGINT,
         Language VARCHAR(255),
         Level VARCHAR(255),
-        FOREIGN KEY (PersonId) REFERENCES User(Id) ON DELETE CASCADE
+FOREIGN KEY (PersonId) REFERENCES User(Id)
     );
 
     CREATE TABLE IF NOT EXISTS Project (
@@ -302,38 +423,209 @@ func createTables(tx *sql.Tx) error {
         PersonID BIGINT,
         Title VARCHAR(255),
         Role VARCHAR(255),
-        Description TEXT, -- Changed VARCHAR(255) to TEXT
+Description TEXT,
         Company VARCHAR(255),
         Document VARCHAR(255),
         ProjectStatus VARCHAR(255),
         StartDate DATE,
         ExpectedEndDate DATE,
-        FOREIGN KEY (PersonID) REFERENCES User(Id) ON DELETE CASCADE
+IsOngoing BOOLEAN DEFAULT FALSE,
+dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
+FOREIGN KEY (PersonID) REFERENCES User(Id)
     );
 
+
+-- Tabla de Notificaciones no de eventos
     CREATE TABLE IF NOT EXISTS Event (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        Description VARCHAR(255),
-        EventType VARCHAR(100),
-        EventTitle VARCHAR(255),
-        UserId BIGINT,
+EventType VARCHAR(50) NOT NULL,
+EventTitle VARCHAR(255) NOT NULL,
+Description TEXT,
+UserId BIGINT NOT NULL,
         OtherUserId BIGINT,
         ProyectId BIGINT,
-        CreateAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE,
-        FOREIGN KEY (OtherUserId) REFERENCES User(Id) ON DELETE SET NULL,
-        FOREIGN KEY (ProyectId) REFERENCES Project(Id) ON DELETE SET NULL
-    );
+CreateAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+IsRead BOOLEAN DEFAULT FALSE,
+GroupId BIGINT,
+Status VARCHAR(50) DEFAULT 'PENDING',
+ActionRequired BOOLEAN DEFAULT FALSE,
+ActionTakenAt DATETIME,
+Metadata JSON,
+dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
+dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
+CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+FOREIGN KEY (UserId) REFERENCES User(Id),
+FOREIGN KEY (OtherUserId) REFERENCES User(Id),
+FOREIGN KEY (ProyectId) REFERENCES Project(Id),
+FOREIGN KEY (GroupId) REFERENCES GroupsUsers(Id)
+);
 
-    CREATE TABLE IF NOT EXISTS Enterprise (
+
+
+CREATE TABLE IF NOT EXISTS Notification (
+Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+EventId BIGINT,
+Description VARCHAR(255),
+FOREIGN KEY (EventId) REFERENCES Event(Id)
+);
+
+
+CREATE TABLE IF NOT EXISTS CommunityEvent (
         Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-        RIF VARCHAR(255) UNIQUE NOT NULL,
-        CompanyName VARCHAR(255) NOT NULL,
-        CategoryId BIGINT,
+    -- Define qué tipo de publicación es, incluyendo 'DESAFIO'.
+    PostType ENUM('EVENTO', 'NOTICIA', 'ARTICULO', 'ANUNCIO', 'MULTIMEDIA', 'DESAFIO', 'DISCUSION') NOT NULL DEFAULT 'EVENTO',
+
+    Title VARCHAR(255) NOT NULL,
         Description TEXT,
+    ImageUrl VARCHAR(255),
+
+    -- Enlace principal (para artículos, noticias, videos o repositorios de desafíos)
+    ContentUrl VARCHAR(2048) NULL,
+    LinkPreviewTitle VARCHAR(255) NULL,
+    LinkPreviewDescription VARCHAR(512) NULL,
+    LinkPreviewImage VARCHAR(2048) NULL,
+
+    -- Campos para EVENTOS
+    EventDate DATETIME NULL,
         Location VARCHAR(255),
-        Phone VARCHAR(255),
-        FOREIGN KEY (CategoryId) REFERENCES Category(CategoryId)
+    Capacity INT NULL,
+    Price DECIMAL(10, 2) NULL,
+    
+    -- --- NUEVOS CAMPOS PARA DESAFÍOS ---
+    ChallengeStartDate DATETIME NULL,
+    ChallengeEndDate DATETIME NULL,
+    ChallengeDifficulty ENUM('PRINCIPIANTE', 'INTERMEDIO', 'AVANZADO', 'EXPERTO') NULL,
+    ChallengePrize VARCHAR(512) NULL, -- Descripción del premio o recompensa
+    ChallengeStatus ENUM('ABIERTO', 'EN_EVALUACION', 'CERRADO', 'CANCELADO') NOT NULL DEFAULT 'ABIERTO',
+
+    -- --- CAMPOS COMUNES ---
+    Tags JSON NULL, -- Puede usarse para tecnologías (ej: ['React', 'Node.js'])
+    OrganizerCompanyName VARCHAR(255),
+    OrganizerUserId BIGINT,
+    OrganizerLogoUrl VARCHAR(255),
+    CreatedByUserId BIGINT NOT NULL,
+    dmeta_title_primary VARCHAR(24) NOT NULL DEFAULT '',
+    dmeta_title_secondary VARCHAR(24) NOT NULL DEFAULT '',
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (OrganizerUserId) REFERENCES User(Id) ON DELETE SET NULL,
+    FOREIGN KEY (CreatedByUserId) REFERENCES User(Id) ON DELETE CASCADE
+);
+
+
+
+/*
+Tabla ReputationReview
+Descripción: Almacena cada evento de reseña y calificación entre dos usuarios de la plataforma.
+Es el núcleo del sistema de reputación, registrando los Puntos de Reputación (RP) y
+el feedback cualitativo.
+
+Campos Principales:
+- ReviewerId: El ID del usuario que realiza la calificación.
+- RevieweeId: El ID del usuario que recibe la calificación.
+- CommunityEventId: El ID del evento/publicación que origina la reseña. Esto es clave
+  para permitir múltiples calificaciones entre los mismos usuarios pero en diferentes contextos.
+- PointsRP: La cantidad de puntos crudos otorgados.
+- Rating: La puntuación visible (ej. 4.5 estrellas).
+- InteractionType: El contexto que originó la reseña.
+
+Relaciones:
+- Se vincula con la tabla User (dos veces) y con la tabla CommunityEvent.
+*/
+CREATE TABLE IF NOT EXISTS ReputationReview (
+    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    -- Clave foránea que referencia al usuario que EMITE la reseña.
+    ReviewerId BIGINT NOT NULL,
+
+    -- Clave foránea que referencia al usuario que RECIBE la reseña y los puntos.
+    RevieweeId BIGINT NOT NULL,
+
+    -- --- CAMPO AÑADIDO ---
+    -- Vincula la reseña a una publicación específica (oferta, evento, desafío).
+    -- Es NOT NULL para asegurar que toda reseña tenga un contexto claro.
+    CommunityEventId BIGINT NOT NULL,
+
+    -- El valor numérico de "Puntos de Reputación" (RP).
+    PointsRP INT NOT NULL,
+
+    -- La calificación visible (ej. en una escala de 1 a 5).
+    Rating DECIMAL(2, 1),
+
+    -- El comentario o feedback cualitativo.
+    Comment TEXT,
+
+    -- Define el contexto de la reseña. Podría ser redundante con CommunityEvent.PostType
+    -- pero se mantiene para flexibilidad.
+    InteractionType ENUM('ENTREVISTA', 'MENTORIA', 'PROYECTO_COLABORATIVO', 'EVENTO', 'POSTULACION_EMPLEO', 'DESAFIO_COMPLETADO'),
+
+    -- Timestamps
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Definición de las llaves foráneas.
+    FOREIGN KEY (ReviewerId) REFERENCES User(Id) ON DELETE CASCADE,
+    FOREIGN KEY (RevieweeId) REFERENCES User(Id) ON DELETE CASCADE,
+    FOREIGN KEY (CommunityEventId) REFERENCES CommunityEvent(Id) ON DELETE CASCADE,
+
+    -- --- NUEVA RESTRICCIÓN ---
+    -- Asegura que solo pueda existir una única reseña por parte de un 'reviewer'
+    -- a un 'reviewee' para un evento comunitario específico.
+    UNIQUE KEY uq_unique_review_per_event (ReviewerId, RevieweeId, CommunityEventId)
+);
+
+
+CREATE TABLE IF NOT EXISTS FeedItemView (
+    UserId BIGINT NOT NULL,
+    -- ItemType distingue entre 'USER' (para perfiles de estudiante/empresa) y 'COMMUNITY_EVENT'
+    ItemType ENUM('USER', 'COMMUNITY_EVENT') NOT NULL,
+    ItemId BIGINT NOT NULL,
+    ViewedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Un usuario solo ve un item una vez. La PK previene duplicados.
+    PRIMARY KEY (UserId, ItemType, ItemId),
+    FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE
+);
+
+
+CREATE TABLE IF NOT EXISTS JobApplication (
+    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    -- --- La Conexión Clave ---
+    -- Se conecta directamente con la publicación en la tabla CommunityEvent.
+    CommunityEventId BIGINT NOT NULL,
+
+    -- El usuario (estudiante/egresado) que se está postulando.
+    ApplicantId BIGINT NOT NULL,
+
+    -- El estado de la postulación dentro del proceso de selección.
+    Status ENUM(
+        'ENVIADA',
+        'EN_REVISION',
+        'ENTREVISTA',
+        'PRUEBA_TECNICA',
+        'OFERTA_REALIZADA',
+        'APROBADA',
+        'RECHAZADA',
+        'RETIRADA'
+    ) NOT NULL DEFAULT 'ENVIADA',
+
+    -- Fecha en que se realizó la postulación.
+    AppliedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Fecha de la última actualización del estado.
+    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Opcional: Un campo para una breve carta de presentación.
+    CoverLetter TEXT,
+
+    -- Definición de las llaves foráneas.
+    FOREIGN KEY (CommunityEventId) REFERENCES CommunityEvent(Id) ON DELETE CASCADE,
+    FOREIGN KEY (ApplicantId) REFERENCES User(Id) ON DELETE CASCADE,
+
+    -- Restricción para asegurar que un usuario no pueda postularse dos veces a la misma oferta.
+    UNIQUE KEY uq_event_applicant (CommunityEventId, ApplicantId)
     );
 	`
 

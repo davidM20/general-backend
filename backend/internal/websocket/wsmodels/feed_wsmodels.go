@@ -43,6 +43,7 @@ type StudentFeedData struct {
 	UserID        int64    `json:"userId"`
 	UserName      string   `json:"userName"`
 	ContactStatus string   `json:"contactStatus"` // Puede ser 'pending', 'accepted', 'rejected', o "" (vacío)
+	HasContact    bool     `json:"hasContact"`
 }
 
 // CompanyFeedData contiene los datos específicos para un item del feed de tipo "company".
@@ -54,6 +55,7 @@ type CompanyFeedData struct {
 	Description string `json:"description"`
 	UserID      int64  `json:"userId"`
 	UserName    string `json:"userName"`
+	HasContact  bool   `json:"hasContact"`
 }
 
 // EventFeedData contiene los datos específicos para un item del feed de tipo "event".

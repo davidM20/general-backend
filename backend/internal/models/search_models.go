@@ -22,11 +22,12 @@ type UniversalSearchParams struct {
 // SearchResultProfile representa un perfil de usuario simplificado para los resultados de búsqueda.
 type SearchResultProfile struct {
 	ID                int64    `json:"id"`
-	FirstName         string   `json:"first_name"`
-	LastName          string   `json:"last_name"`
+	FirstName         *string  `json:"first_name"`
+	LastName          *string  `json:"last_name"`
 	Picture           *string  `json:"picture"`
 	Summary           *string  `json:"summary"`
 	Location          *string  `json:"location"`
+	CompanyName       *string  `json:"company_name,omitempty"`
 	Career            *string  `json:"career,omitempty"`
 	YearsOfExperience *float64 `json:"years_of_experience,omitempty"`
 	TotalReputation   *int     `json:"total_reputation"`
@@ -38,6 +39,7 @@ type SearchResultProfile struct {
 // UniversalSearchResponse es la estructura de respuesta que combina usuarios y eventos.
 type UniversalSearchResponse struct {
 	Users              []SearchResultProfile `json:"users"`
+	Companies          []SearchResultProfile `json:"companies"`
 	Events             []CommunityEvent      `json:"events"`
 	Pagination         PaginationDetails     `json:"pagination"`
 	YearsDistribution  []YearsDistribution   `json:"years_distribution"`

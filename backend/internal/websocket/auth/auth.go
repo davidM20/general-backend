@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/davidM20/micro-service-backend-go.git/internal/auth"
+	"github.com/davidM20/micro-service-backend-go.git/internal/config"
 	"github.com/davidM20/micro-service-backend-go.git/internal/db/queries"
 	"github.com/davidM20/micro-service-backend-go.git/internal/websocket/wsmodels"
 	"github.com/davidM20/micro-service-backend-go.git/pkg/logger"
@@ -16,13 +18,13 @@ import (
 // Authenticator maneja la autenticación de las solicitudes WebSocket.
 // Puede contener dependencias como una conexión a la base de datos.
 type Authenticator struct {
-	db *sql.DB
-	// Aquí podrías añadir otras dependencias, como un validador de JWT, etc.
+	db  *sql.DB
+	cfg *config.Config // Añadir la configuración para acceder al secreto del JWT
 }
 
 // NewAuthenticator crea una nueva instancia de Authenticator.
-func NewAuthenticator(db *sql.DB) *Authenticator {
-	return &Authenticator{db: db}
+func NewAuthenticator(db *sql.DB, cfg *config.Config) *Authenticator {
+	return &Authenticator{db: db, cfg: cfg}
 }
 
 // AuthenticateAndGetUserData es el callback para customws.
@@ -54,33 +56,28 @@ func (a *Authenticator) AuthenticateAndGetUserData(r *http.Request) (userID int6
 		return 0, wsmodels.WsUserData{}, errors.New("token de autorización requerido")
 	}
 
-	// 2. Validar el token
-	// Aquí iría la lógica para validar el token JWT o de sesión.
-	// Esto podría implicar verificar la firma, la expiración, y consultar la BD si es un token de sesión.
-	// Por ahora, simularemos una validación simple.
-
-	// Ejemplo: Si el token es "valid-token-for-user-1", se autentica como UserID 1.
-	// En una implementación real, esto consultaría la tabla Session o validaría un JWT.
-	user, err := queries.GetUserBySessionToken(token) // Asumimos que tienes esta función en tu paquete db/queries
+	// 2. Validar el token JWT
+	claims, err := auth.ValidateJWT(token, []byte(a.cfg.JwtSecret))
 	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.Warnf("AUTH", "Token de sesión inválido o expirado: %s", token)
-			return 0, wsmodels.WsUserData{}, errors.New("token inválido o expirado")
-		}
-		logger.Errorf("AUTH", "Error al validar token de sesión: %v", err)
-		return 0, wsmodels.WsUserData{}, errors.New("error interno validando token")
+		logger.Warnf("AUTH", "Token JWT inválido para WS: %v", err)
+		return 0, wsmodels.WsUserData{}, errors.New("token inválido o expirado")
 	}
 
-	// 3. Si el token es válido, obtener UserID y cualquier otro dato necesario para WsUserData.
-	// Por ejemplo, podrías querer cargar el Username aquí si no está en el token.
-	// Supongamos que 'user.Id' y 'user.UserName' vienen de tu estructura 'models.User' recuperada.
-	logger.Infof("AUTH", "Usuario autenticado exitosamente para WS: ID %d, Username %s (método: %s)",
-		user.Id, user.UserName, func() string {
-			if authHeader != "" {
-				return "Authorization header"
-			}
-			return "URL parameter"
-		}())
+	// 3. Si el token es válido, obtener datos adicionales del usuario desde la BD
+	user, err := queries.GetUserByID(a.db, claims.UserID) // Necesitarás crear esta función
+	if err != nil {
+		if err == sql.ErrNoRows {
+			logger.Warnf("AUTH", "Usuario del token JWT no encontrado en BD: UserID %d", claims.UserID)
+			return 0, wsmodels.WsUserData{}, errors.New("usuario no encontrado")
+		}
+		logger.Errorf("AUTH", "Error al obtener datos del usuario desde BD para WS: %v", err)
+		return 0, wsmodels.WsUserData{}, errors.New("error interno al verificar usuario")
+	}
+
+	// 4. Construir y devolver WsUserData
+	logger.Infof("AUTH", "Usuario autenticado exitosamente para WS: ID %d, Username %s",
+		user.Id, user.UserName)
+
 	return user.Id, wsmodels.WsUserData{
 		UserID:   user.Id,
 		Username: user.UserName,

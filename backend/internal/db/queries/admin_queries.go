@@ -261,3 +261,30 @@ func GetUnapprovedCompaniesPaginated(page, pageSize int) ([]models.CompanyApprov
 
 	return companies, nil
 }
+
+// ApproveCompanyStatus cambia el estado de una empresa a 'Aprobado'.
+// El ID de estado para 'Aprobado' es 2.
+func ApproveCompanyStatus(companyID int) error {
+	// StatusAuthorizedId = 2 para 'Aprobado'
+	query := "UPDATE User SET StatusAuthorizedId = 2 WHERE Id = ? AND RoleId = ?"
+
+	result, err := DB.Exec(query, companyID, models.RoleBusiness)
+	if err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error updating company status for ID %d: %v", companyID, err)
+		return fmt.Errorf("error updating company status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		logger.Errorf(adminQueriesLogComponent, "Error getting rows affected for company ID %d: %v", companyID, err)
+		return fmt.Errorf("error checking rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		// No se encontró una empresa con ese ID y rol, o ya estaba aprobada con otro estado.
+		// Devolvemos un error similar a "not found" para que el handler lo gestione.
+		return sql.ErrNoRows
+	}
+
+	return nil
+}

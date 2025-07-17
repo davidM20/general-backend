@@ -248,7 +248,7 @@ func GetUserProfile(userID int64) (*models.UserProfile, error) {
 func GetUserProfileByID(db *sql.DB, userID int64) (*models.SearchResultProfile, error) {
 	query := `
         SELECT
-            u.Id, u.FirstName, u.LastName, u.Picture, u.Summary, u.Location, u.RoleId,
+            u.Id, u.FirstName, u.LastName, u.Picture, u.Summary, u.Location, u.RoleId, u.CompanyName,
             (SELECT SUM(rr.PointsRP) FROM ReputationReview rr WHERE rr.RevieweeId = u.Id) AS TotalReputation,
             (SELECT AVG(rr.Rating) FROM ReputationReview rr WHERE rr.RevieweeId = u.Id) AS AverageRating,
             (SELECT e.Degree FROM Education e WHERE e.PersonId = u.Id ORDER BY e.GraduationDate DESC LIMIT 1) AS Career,
@@ -257,10 +257,14 @@ func GetUserProfileByID(db *sql.DB, userID int64) (*models.SearchResultProfile, 
         WHERE u.Id = ?
     `
 	profile := &models.SearchResultProfile{}
+	// Usamos sql.NullString y otros tipos Null para manejar valores que pueden ser NULL en la DB
+	var firstName, lastName, picture, summary, location, career, companyName sql.NullString
+	var yearsOfExperience, averageRating sql.NullFloat64
+	var totalReputation sql.NullInt64
+
 	err := db.QueryRow(query, userID).Scan(
-		&profile.ID, &profile.FirstName, &profile.LastName, &profile.Picture,
-		&profile.Summary, &profile.Location, &profile.RoleId, &profile.TotalReputation, &profile.AverageRating,
-		&profile.Career, &profile.YearsOfExperience,
+		&profile.ID, &firstName, &lastName, &picture, &summary, &location, &profile.RoleId, &companyName,
+		&totalReputation, &averageRating, &career, &yearsOfExperience,
 	)
 
 	if err != nil {
@@ -269,6 +273,39 @@ func GetUserProfileByID(db *sql.DB, userID int64) (*models.SearchResultProfile, 
 		}
 		logger.Errorf("QUERIES", "Error escaneando SearchResultProfile para el usuario %d: %v", userID, err)
 		return nil, err
+	}
+
+	// Asignamos los valores a la estructura final, convirtiendo de Null-types a punteros
+	if firstName.Valid {
+		profile.FirstName = &firstName.String
+	}
+	if lastName.Valid {
+		profile.LastName = &lastName.String
+	}
+	if picture.Valid {
+		profile.Picture = &picture.String
+	}
+	if summary.Valid {
+		profile.Summary = &summary.String
+	}
+	if location.Valid {
+		profile.Location = &location.String
+	}
+	if companyName.Valid {
+		profile.CompanyName = &companyName.String
+	}
+	if career.Valid {
+		profile.Career = &career.String
+	}
+	if yearsOfExperience.Valid {
+		profile.YearsOfExperience = &yearsOfExperience.Float64
+	}
+	if totalReputation.Valid {
+		rep := int(totalReputation.Int64)
+		profile.TotalReputation = &rep
+	}
+	if averageRating.Valid {
+		profile.AverageRating = &averageRating.Float64
 	}
 
 	// Traducir RoleId a un string legible

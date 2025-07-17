@@ -285,13 +285,40 @@ func GetUserByEmail(db *sql.DB, email string) (models.User, string, error) {
 	return resultStruct.User, resultStruct.Password, nil
 }
 
+// GetUserByID recupera un usuario por su ID.
+func GetUserByID(db *sql.DB, userID int64) (models.User, error) {
+	var user models.User
+	query := `
+        SELECT
+            Id, FirstName, LastName, UserName, Email, Phone, Sex, DocId,
+            NationalityId, Birthdate, Picture, DegreeId, UniversityId,
+            RoleId, StatusAuthorizedId, Summary, Address, Github, Linkedin
+        FROM User WHERE Id = ?
+    `
+	err := db.QueryRow(query, userID).Scan(
+		&user.Id, &user.FirstName, &user.LastName, &user.UserName, &user.Email,
+		&user.Phone, &user.Sex, &user.DocId, &user.NationalityId, &user.Birthdate,
+		&user.Picture, &user.DegreeId, &user.UniversityId, &user.RoleId,
+		&user.StatusAuthorizedId, &user.Summary, &user.Address, &user.Github, &user.Linkedin,
+	)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			logger.Errorf("AUTH_QUERIES", "Error getting user by ID %d: %v", userID, err)
+		}
+		return user, err
+	}
+	return user, nil
+}
+
 // RegisterUserSession registra una nueva sesión para el usuario
-func RegisterUserSession(db *sql.DB, userId int64, token, ip string, roleId int) error {
+func RegisterUserSession(db *sql.DB, userId int64, token, ip string, roleId int, tokenId int) error {
+	logger.Infof("AUTH_QUERIES", "Registering user session for UserID %d with token %s, IP %s, RoleId %d, TokenId %d", userId, token, ip, roleId, tokenId)
+
 	query := `
 		INSERT INTO Session (UserId, Tk, Ip, RoleId, TokenId)
 		VALUES (?, ?, ?, ?, ?)
 	`
-	_, err := db.Exec(query, userId, token, ip, roleId, 0) // TokenId = 0 por ahora
+	_, err := db.Exec(query, userId, token, ip, roleId, tokenId) // Usar el tokenId proporcionado
 	if err != nil {
 		logger.Errorf("AUTH_QUERIES", "Failed inserting session for UserID %d: %v", userId, err)
 		return err

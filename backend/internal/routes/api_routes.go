@@ -348,6 +348,7 @@ func setupAdminRoutes(router *mux.Router, adminHandler *handlers.AdminHandler, d
 	adminRouter.HandleFunc("/dashboard", adminHandler.GetDashboard).Methods(http.MethodGet)
 	adminRouter.HandleFunc("/users", adminHandler.ListUsers).Methods(http.MethodGet)
 	adminRouter.HandleFunc("/companies/unapproved", adminHandler.ListUnapprovedCompanies).Methods(http.MethodGet)
+	adminRouter.HandleFunc("/companies/{id:[0-9]+}/approve", adminHandler.ApproveCompany).Methods(http.MethodPatch)
 
 	// TODO: Implementar los siguientes handlers y rutas
 	// adminRouter.HandleFunc("/users/{id}", adminHandler.ManageUser).Methods(http.MethodPut, http.MethodDelete)
